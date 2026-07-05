@@ -13,3 +13,12 @@ Or reference the file directly:
 ```
 read_file skills/methodology/code-assembly/SKILL.md
 ```
+
+Or the Hermes memory bridge:
+```
+@skills integration/hermes-memory-bridge
+```
+Or:
+```
+read_file skills/integration/hermes-memory-bridge/SKILL.md
+```

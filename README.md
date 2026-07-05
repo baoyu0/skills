@@ -24,6 +24,11 @@
 |---|---|
 | [subtitle-edit](media/subtitle-edit/) | Subtitle Edit CLI 操作：格式转换、时间偏移、帧率修正 |
 
+### 跨 Agent 集成 (integration)
+| Skill | 说明 |
+|---|---|
+| [hermes-memory-bridge](integration/hermes-memory-bridge/) | 桥接 Hermes 桌面端记忆系统到其他 AI Agent。让 pi / Claude Code / Codex 也能读取 Hermes 的 USER.md 用户画像和结构化事实库，实现双向记忆同步 |
+
 ## 使用方式
 
 ### Hermes Agent
@@ -38,6 +43,13 @@ skill_view(name='content-publishing/obsidian-halo')
 
 ```bash
 # 在项目根目录放 CLAUDE.md / AGENTS.md，或在对话中引用
+```
+
+### pi
+
+```bash
+# Auto-discovered from ~/.pi/agent/skills/
+/skill:hermes-memory-bridge
 ```
 
 ## License
