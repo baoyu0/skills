@@ -1,0 +1,4 @@
+timestamp	commit	skill	old_score	new_score	status	dimension	note	eval_mode
+2026-06-30T12:50	09bf72b	obsidian-halo	-	86.2	baseline	-	初始基线评估	dry_run
+2026-06-30T12:50	2fb3a97	obsidian-halo	86.2	88.0	keep	dim4	添加4个🔴 CHECKPOINT视觉标记，6→9分	dry_run
+2026-06-30T12:50	33fda8b	obsidian-halo	88.0	88.6	keep	dim9	添加🚫反例黑名单独立章节+8项总结表，9→10分	dry_run

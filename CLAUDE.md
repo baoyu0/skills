@@ -1,13 +1,15 @@
-Skills are organized into bucket folders under `skills/`:
+# CLAUDE.md — baoyu0/skills
 
-- `engineering/` — daily code work
-- `productivity/` — daily non-code workflow tools
-- `misc/` — kept around but rarely used
-- `personal/` — tied to my own setup, not promoted
-- `deprecated/` — no longer used
+This is a monorepo of reusable AI agent skills. Each skill lives in a category subdirectory with its own `SKILL.md`.
 
-Every skill in `engineering/`, `productivity/`, or `misc/` must have a reference in the top-level `README.md` and an entry in `.claude-plugin/plugin.json`. Skills in `personal/` and `deprecated/` must not appear in either.
+To load a skill:
 
-Each skill entry in the top-level `README.md` must link the skill name to its `SKILL.md`.
+```
+@skills methodology/code-assembly
+@skills agent-orchestration/hermes-do-task
+```
 
-Each bucket folder has a `README.md` that lists every skill in the bucket with a one-line description, with the skill name linked to its `SKILL.md`.
+Or reference the file directly:
+```
+read_file skills/methodology/code-assembly/SKILL.md
+```
