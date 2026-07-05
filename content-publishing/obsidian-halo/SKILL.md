@@ -5,6 +5,8 @@ description: "上传原文 → 拉回 frontmatter → cleanup → auto-number（
 
 # Obsidian → Halo 文章处理 Skill
 
+> **👤 用户偏好：CSS/后台设置改完直接给代码，让用户自己复制粘贴。不要通过 API 操作 ConfigMap。**
+>
 > **⚠️ 作用域警告：此 skill 只负责本地 markdown 文件处理与发布。与 Halo 后台「外观 → 代码注入」的 CSS/主题定制完全无关。**
 >
 > 不要在此 skill 中操作 Halo 主题 CSS、代码注入、字体配置或任何 Halo 后台渲染设置。那些归 `halo-theme-css` skill 管。
@@ -398,7 +400,10 @@ python "C:/Users/zhaid/AppData/Local/hermes/skills/obsidian-halo/scripts/auto-nu
 
   **X 剪藏必做 cleanup（比普通文章多三步）：**
   1. 剥离 X 线程回复元数据：「引用」、用户名、`@`、时间戳、`发布你的回复`、`由 AI 生成`、点赞数、视频时长标签等 X UI 元素——全部从正文中删除。它们属于网页 UI，不应出现在文章正文段落。\n  2. 检查文章是否为结构化 prompt 分享（含 `【风格】`/`【场景】`/`【角色】`/`【时长】` 或 `[00:XX-00:XX]` 时间码）。如果是：元属性段（【风格】【时长】【场景】【角色】）用 `**【属性名】**` 加粗标头 + 正文保留在代码块外；分镜段（含时间码的镜头描述）按 `[00:XX-00:XX]` 自然分界**拆成多个独立 ` ```text ` 代码块**，每个场景一块。用 `---` 分隔元属性与分镜，分镜部分前加 H3 `### 分镜详情`。\n  3. 拆分后全文搜「引用」、「发布你的回复」、「没有项目」、「由 AI 生成」等——不可有任何残留。
-  3. 剥离后检查：全文搜「引用」、「发布你的回复」、「没有项目」、「由 AI 生成」等——不可有任何残留。
+  **拆分后搜索「引用」、「发布你的回复」、「没有项目」、「由 AI 生成」等——不可有任何残留。**
+
+  - **Mermaid 多图最佳实践**：已安装 `halo-sigs/plugin-text-diagram` 插件。流程图中优先用 ` ```mermaid ` 而非 ` ```text ` 箭头。见 `references/halo-mermaid-rendering.md`。
+  - **export-markdown 产物为 CRLF 行尾**：在 Windows git-bash 中处理时，所有 regex 匹配需考虑 `\r\n` 变体，或优先用 `str.replace()` 精确替换。
 
 > **🔴 CHECKPOINT · 🛑 STOP：内容处理完毕。确认以下 3 项后再进入 Phase 4 发布：**
 > 1. ✅ heading 结构：H1→H2→H3，无重复编号
@@ -552,6 +557,8 @@ curl -s "https://jia.baoyu2023.top/archives/<slug>?nocache=1" | grep "<title>"
 | `references/h3-insertion-technique.md` | 用 `execute_code` + `str.replace` 内容锚点批量插入 H3 子节的技术与陷阱 |
 | `references/crlf-patch-silent-failure.md` | `patch` 工具在 CRLF 文件上静默失败——返回 success:true 但内容不变 |
 | `references/halo-theme-icons.md` | Fluid 主题菜单图标系统（iconfont 注释机制）+ Reicon SVG 图标库速查 + JS 注入替代方案 |
+| `references/halo-mermaid-rendering.md` | Halo Mermaid 流程图渲染最佳实践：主题配置、折叠块陷阱、CRLF regex 兼容、ConfigMap API CSS 注入 |
+| `references/halo-configmap-api.md` | Halo ConfigMap API 完整流程：GET/PUT codeInjection、PAT 鉴权、完整替换模式 |
 
 ## 完整执行流
 
@@ -628,6 +635,10 @@ curl -s "https://jia.baoyu2023.top/archives/<slug>?nocache=1" | grep -oP '<title
 
 > 完整陷阱列表见下方章节，每条内含根因分析 + 修复路径。
 
+## 👤 用户偏好
+
+- **代码注入改 CSS → 直接给代码，让用户手动复制粘贴**：ConfigMap API 回写 CSS 的风险太高（可能漏 `<style>` 包裹、纯文本暴露在页面中）。用户明确要求「你直接在这里改，我手动复制上去」。见 `references/halo-configmap-api.md`。\n- **Halo 插件优先于手动方案**：遇到渲染限制时优先搜索 Halo 插件市场，比折腾主题 CSS 更可靠。本 session 中 `plugin-text-diagram` 解决了 Mermaid 多图渲染限制，而此前用主题 CSS + `%%{init}` 折腾了数小时无果。\n- **改前先展示方案，用户确认后再执行**：涉及页面排版/格式变更时，先列选项让用户选，不直接改。用户说「好」才动手。\n- **CSS 注入必须 `<style>` 包裹，且用 `curl` 而非 Python `urllib` PUT**：裸 CSS 会在页面顶部显示为可见文字。ConfigMap PUT 回写时 Python `urllib` 返回 403 但 `curl -X PUT` 正常。
+
 ## 已知陷阱
 
 0. **🚨 视频下载先调研，别闷头折腾自动化**：X Article 视频 MSE + Service Worker 防自动化，所有 CLI 工具（yt-dlp、gallery-dl、videodl、Cobalt API）都不支持。obr CDP 的 `fetch()` 拦截、`Network.enable`、`Input.dispatchMouseEvent` 全试过，全部无效。
@@ -662,4 +673,10 @@ curl -s "https://jia.baoyu2023.top/archives/<slug>?nocache=1" | grep -oP '<title
 27. **优先用文件级方案，不绕 CMS API**：遇到上传的视频/图片在部分浏览器出问题时，优先替换服务器文件本身，不要试图通过 Halo API 修改页面内容来换 URL。
 28. **export-markdown 会覆盖本地文件**：跑完 export 后本地文件被 Halo 端内容完全替换。如果 import/update 未正确执行（如被 `halo.name` 跳过），export 会把**旧内容**拉回来覆盖你的本地修改。**先确认 Halo 端的文章内容正确，再 export 同步回本地**。
 （陷阱 29~68 已在历史版本中废弃或合并）\n（陷阱 30~71 已在历史版本中废弃或合并到 `halo-theme-css` skill 中。\n\n69. **代码块内的假 heading 被当作真实标题**：当教程文章的 markdown 代码块中展示了一道「CLAUDE.md 示例内容」，里面含有 `## knowledge` 或类似 heading 文本时，auto-number 的 H2 编号可能跳过该真实标题，或者后续 AI 的 renumber 操作把代码块内的示例文本当成真实 heading 一起修改——导致代码块内出现 `## 11. 知识库的核心结构` 这种**看起来像 heading 实际是代码**的混乱。**修复**：① 在 auto-number 后，用 `search_files pattern=\"^#{1,4} \"` 对比实际渲染的 H1/H2/H3 数量与预期数量；② 如果某章节 heading 出现在预期不该有的位置（比如 header 列表中第 10 章和第 12 章之间的 heading 来自代码块），用 `write_file` 一次性还原被污染的代码块内容；③ **永不信任 `search_files` 输出的绝对精确性**——页面渲染以 `browser_console` 的 `querySelectorAll('hN').length` 为准。④ 预防措施：在 `rename_h2()` 操作后，立即检查代码块范围内有无 `##` 行被误改。
+
+70. **⚠️ `<details>` HTML 标签与 markdown 代码块混合导致文章后半部分被截断**：Halo 的 markdown 解析器对 HTML 包裹 markdown 代码块（如 `<details>` 内嵌 ` ```mermaid ```）的支持不稳定。当文章中出现此类结构时，Halo 可能在该标签处提前终止渲染——后端存了完整内容，但页面只显示到标签之前的部分。**修复**：保持纯 markdown 语法，绝不混用 HTML 标签包裹 ` ``` ` 代码块。如果要从 `` ```text `` 迁到 `` ```mermaid ``，直接改语言标识，不要加 HTML 外壳。纯 HTML 布局（如图片 `<div align="center">`）不含嵌套代码块是安全的。
+
+71. **⚠️ Halo/Fluid 主题 Mermaid 渲染器最多只处理前 2 个图**：一篇文章中堆 3+ 个 ` ```mermaid ``` 块时，第 3 个之后不会被渲染为 SVG。**修复**：合并小图为 1 张大图（`graph TD` 支持多节点），或把后面的图改回 ` ```text ` 纯文本格式。详见 `references/halo-mermaid-rendering.md`。
+
+72. **Python `urllib` PUT 返回 403 但 curl 正常**：用同一 PAT 调用 Halo ConfigMap API，GET 正常（`urllib` 和 `curl` 都可以），PUT 回写时 `urllib.request.urlopen(req)` 返回 403 但 `curl -X PUT` 成功。这是 Python 标准库 HTTP 实现的差异。**修复**：ConfigMap PUT 回写始终用 `curl`，不要用 Python `urllib`。
 
