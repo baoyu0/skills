@@ -76,9 +76,16 @@ def search_obsidian(keyword):
     print()
 
 
+def url_encode(s):
+    """简单的 URL 编码（只编码特殊字符，不编码中文）"""
+    import urllib.parse
+    return urllib.parse.quote(s, safe='')
+
+
 def search_halo(keyword):
     """通过 Halo 公开 API 搜索已发布的文章"""
-    cmd = f'curl -s "{HALO_API}?keyword={keyword}&size=10" 2>nul'
+    encoded = url_encode(keyword)
+    cmd = f'curl -s "{HALO_API}?keyword={encoded}&size=10" 2>nul'
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
 
     try:

@@ -1,9 +1,9 @@
 ---
 name: search-all
-description: "全源检索工具 — 一次搜索 Obsidian Vault + Halo 博客 + Hermes 配置。破数据孤岛。"
+description: "全源检索 — 一次搜索 Obsidian + Halo 博客 + Hermes 配置。用户输入 `search-all <关键词>` 触发。"
 ---
 
-# search-all — 全源检索 Skill
+# search-all — 全源检索
 
 ## 问题
 
@@ -21,44 +21,39 @@ description: "全源检索工具 — 一次搜索 Obsidian Vault + Halo 博客 +
 | 💬 Session DB | 历史对话 | 对我说「帮我搜 session 里关于 xxx 的内容」 |
 | 🧠 Memory / fact_store | 持久化记忆 | 对我说「帮我搜 memory 里关于 xxx 的内容」 |
 
-## 安装
+## 触发条件
+
+用户说「帮我找xxx」「搜一下xxx」「xxx在哪」「之前我们聊过xxx」时，优先走本 skill。
+
+## 执行流程
+
+### 用户可自搜（CLI）
 
 ```bash
-# 1. 复制脚本
-cp scripts/search-all.py ~/bin/
-cp scripts/search-all.sh ~/bin/search-all
-chmod +x ~/bin/search-all
-
-# 2. 确保 ~/bin 在 PATH 中（默认已在）
-```
-
-## 用法
-
-```bash
-search-all <关键词>              # 同时搜所有文件级源
-search-all obsidian <关键词>     # 只搜 Obsidian
-search-all halo <关键词>         # 只搜博客
-search-all config <关键词>       # 只搜 Hermes 配置
+search-all <关键词>              # 所有源
+search-all obsidian <关键词>     # Obsidian 只
+search-all halo <关键词>         # 博客只
+search-all config <关键词>       # 配置只
 search-all help                  # 帮助
 ```
 
-## 示例
+### Agent 补充搜索（我负责）
 
-```bash
-# 搜所有源
-search-all "AI Agent"
-# → Obsidian: 23 个文件命中
-# → Halo: 21 篇文章匹配
-# → Config: 3 个配置文件
+CLI 搜不到的文件级源需要我手动查：
 
-# 搜 Agent 专属源（直接对我说）
-# 「帮我搜 session 里关于 Agentic Engineering 的内容」
-# 「帮我搜 fact_store 里关于 Karing 路由的内容」
-```
+1. **session DB** → `session_search(query="xxx")`
+2. **fact_store** → `fact_store(action="search", query="xxx")`
+3. **memory** → 查看 target='memory' 和 target='user' 的现有条目
+
+### 最佳实践
+
+1. 用户问 xxx 相关 → 先 `search-all xxx` 快速覆盖文件级源
+2. 再补 `session_search` + `fact_store` 覆盖 Agent 源
+3. 合成结果后给用户一个「从哪找到的」摘要
 
 ## 注意事项
 
 - **Windows 路径**：Python subprocess 用 cmd.exe 不认识正斜杠（`D:/`），所以脚本用反斜杠（`D:\`）
 - **grep 限制**：每文件最多返回 3 行匹配，避免输出爆炸
-- **Halo API**：使用公开 API，无需鉴权，但受限于 Halo 的分页和关键词匹配算法
+- **Halo API**：使用公开 API，无需鉴权，但关键词已做 URL 编码（支持中文/特殊字符）
 - **Agent 专属源**：session DB / memory / fact_store 只能由 Agent 在对话中搜索，不可通过 CLI 直接访问
