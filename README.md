@@ -16,8 +16,9 @@
 
 ### 内容发布 (content-publishing)
 | Skill | 说明 |
-|---|---|
+|------|------|
 | [obsidian-halo](content-publishing/obsidian-halo/) | Obsidian → Halo 博客发布，含 AI 优化排版流水线 |
+| [x-clip-purify](content-publishing/x-clip-purify/) | **X 剪藏标准化** — 剥离元数据、清理自介、检测结构化 prompt。`x-clip-purify clean <file>` |
 
 ### 媒体处理 (media)
 | Skill | 说明 |
