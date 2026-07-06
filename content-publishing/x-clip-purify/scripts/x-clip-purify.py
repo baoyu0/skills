@@ -3,11 +3,11 @@
 x-clip-purify — X/Twitter 剪藏文章标准化工具
 
 用法:
-  python x-clip-purify.py detect <file>    # 检测文章来源
-  python x-clip-purify.py clean <file>     # 清理 X 噪音
-  python x-clip-purify.py title <file> [新标题]  # 重写标题
-  python x-clip-purify.py video <file>     # 清理视频标签
-  python x-clip-purify.py help             # 帮助
+  x-clip-purify detect <file>              # 检测文章来源
+  x-clip-purify clean <file> [--dry-run]   # 清理 X 噪音（加 --dry-run 预览）
+  x-clip-purify title <file> "新标题"      # 重写标题
+  x-clip-purify video <file>               # 清理视频标签
+  x-clip-purify help                       # 显示帮助
 """
 
 import re, sys, os
@@ -83,7 +83,7 @@ def cmd_detect(filepath):
     return "prompt"
 
 
-def cmd_clean(filepath):
+def cmd_clean(filepath, dry_run=False):
     """执行所有清理操作"""
     content = read_file(filepath)
     original = content
@@ -140,13 +140,16 @@ def cmd_clean(filepath):
         print(f"  {DIM}无需清理{RESET}")
         return
 
-    write_file(filepath, content)
     total = sum(report.values())
-    print(f"\n{GREEN}✅ X-Clip-Purify 清理完成{RESET}")
+    if dry_run:
+        print(f"\n{YELLOW}🔍 Dry-Run: 将清理 {total} 处{RESET}")
+    else:
+        write_file(filepath, content)
+        print(f"\n{GREEN}✅ X-Clip-Purify 清理完成{RESET}")
     for k, v in report.items():
         if v > 0:
             print(f"  {GREEN}✅ {k}: {v} 处{RESET}")
-    print(f"  {DIM}共清理 {total} 处{RESET}")
+    print(f"  {DIM}共 {total} 处{'（预览，未写入）' if dry_run else ''}{RESET}")
 
 
 def cmd_title(filepath, new_title=None):
@@ -168,10 +171,12 @@ def cmd_title(filepath, new_title=None):
             new_lines.append(f"title: {new_title}")
             title_updated = True
         elif line.startswith("slug:") and new_title:
-            # 自动生成 slug
-            slug = re.sub(r'[^\w\u4e00-\u9fff-]', '-', new_title.lower())
+            # 自动生成纯 ASCII slug（Halo 不支持中文 slug）
+            slug = new_title.lower()
+            slug = re.sub(r'[^a-z0-9-]', '-', slug)  # 只保留 ASCII 字母数字
             slug = re.sub(r'-+', '-', slug).strip('-')
-            # 中文 slug 会有问题，Halo 会自动过滤
+            if not slug:
+                slug = "post"
             new_lines.append(f"slug: {slug}")
             slug_updated = True
         else:
@@ -227,7 +232,8 @@ def main():
     if cmd == "detect":
         cmd_detect(filepath)
     elif cmd == "clean":
-        cmd_clean(filepath)
+        dry_run = "--dry-run" in sys.argv or "-n" in sys.argv
+        cmd_clean(filepath, dry_run)
     elif cmd == "title":
         new_title = sys.argv[3] if len(sys.argv) >= 4 else None
         cmd_title(filepath, new_title)
