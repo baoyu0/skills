@@ -1,24 +1,22 @@
 # CLAUDE.md — baoyu0/skills
 
-This is a monorepo of reusable AI agent skills. Each skill lives in a category subdirectory with its own `SKILL.md`.
+Monorepo of reusable AI agent skills. 9 skills across 8 categories.
 
-To load a skill:
-
-```
+```text
 @skills methodology/code-assembly
 @skills agent-orchestration/hermes-do-task
-```
-
-Or reference the file directly:
-```
-read_file skills/methodology/code-assembly/SKILL.md
-```
-
-Or the Hermes memory bridge:
-```
+@skills content-publishing/obsidian-halo
+@skills content-publishing/x-clip-purify
+@skills media/subtitle-edit
+@skills network/karing-routing
 @skills integration/hermes-memory-bridge
+@skills tools/search-all
+@skills development/windows-triage
 ```
-Or:
-```
-read_file skills/integration/hermes-memory-bridge/SKILL.md
+
+Each skill has `SKILL.md` with full instructions and optional `scripts/` with CLI tools.
+
+Install via:
+```bash
+npx skills add baoyu0/skills@<category>/<skill-name> -g -y
 ```
