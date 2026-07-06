@@ -40,6 +40,11 @@
 |------|------|
 | [search-all](tools/search-all/) | **全源检索** — 一次搜索 Obsidian + Halo 博客 + Hermes 配置，破数据孤岛 |
 
+### 开发环境 (development)
+| Skill | 说明 |
+|------|------|
+| [windows-triage](development/windows-triage/) | **Windows 故障诊断** — Insider 25H2 错误码速查、诊断决策树、已知回归清单 |
+
 ## 使用方式
 
 ### Hermes Agent
