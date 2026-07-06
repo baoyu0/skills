@@ -88,29 +88,29 @@ python "C:/Users/zhaid/.hermes/scripts/halo-migrate-images.py" "<文件绝对路
 
 > **🔴 CHECKPOINT · 🛑 STOP：语言检测/翻译完成。确认文件内容无误后，再进入 Phase 0.5 标题重写。**
 
-#### Phase 0.5: X 剪藏 / 无标题文章的标题重写（⚠️ Phase 1 之前必须做）
+#### Phase 0.5: X 剪藏预处理（⚠️ Phase 1 之前必须做）
 
-**问题：** X/Twitter 剪藏文章的原始 title 通常是机器生成的格式——如 `"X 上的 某某：...完整推文..."` 或 YAML 折叠标量长文——直接推到 Halo 会导致页面标题很长很丑、slug 也是机器生成的无意义字符串。
+**优先使用独立工具 `x-clip-purify`：** 如果文件来自 X/Twitter 剪藏，在进入 obsidian-halo 管线前先用独立 skill 做预处理：
 
-**触发条件：** 以下任一模式都触发重写：
-- `title` 以 `"X 上的` 或 `"X 上的 ` 开头
-- `title` 是 YAML `>-` 折叠标量格式的长推文原文
-- `title` 明显为机器生成，无人类可读标题
-- 文章 body 中完全没有 `#` / `##` / `###` heading（无标题结构的纯文本剪藏）
+```bash
+# 检测文章来源
+python "C:/Users/zhaid/bin/x-clip-purify.py" detect "<文件路径>"
 
-**做法：在 Phase 1 上传之前重写 title 和 slug**
+# 如果是 X/Twitter，执行清理（剥离元数据、自介、空 section、优化 alt 文本）
+python "C:/Users/zhaid/bin/x-clip-purify.py" clean "<文件路径>"
 
-1. 通读文章内容，理解核心主题
-2. **手写一个干净简洁的 title**（10-30 字），最好是正文中会用的 H1 标题
-3. **从新 title 推导一个英文 slug**（小写、连字符分隔、无特殊字符），如 `ai-interview-manager-gitops`
-4. 用 `patch`（单次精确替换）更新 frontmatter 中的 `title` 和 `slug` 字段
-5. 验证 frontmatter YAML 格式完整（`---` 闭合、无折叠标量残留）
+# 如需重写标题
+python "C:/Users/zhaid/bin/x-clip-purify.py" title "<文件路径>" "新标题"
+```
 
-**然后进入 Phase 1**，此时 Halo 会直接用干净的 title/slug 创建文章，后续 Phase 2 export 拉回的就是标准格式。
+`x-clip-purify` 独立 skill 位于 `tools/x-clip-purify`，接管了此前 Phase 3 中手工做的 X 噪音清理。详见该 skill 的 SKILL.md。
 
-> ⚠️ **常见错误**：先上传 → 拉回后再改 slug。这会导致文章 URL 已经是 ugly slug，改 slug 后旧 URL 404。务必在 Phase 1 之前改好。
+**仅当 `x-clip-purify` 不需要运行时（非 X 来源但有奇怪标题），才手动以下流程：**
 
-> **🔴 CHECKPOINT · 🛑 STOP：标题已重写为人类可读格式，slug 已优化。现在进入 Phase 1 上传到 Halo。**
+- `title` 以 `"X 上的` 开头或是 YAML `>-` 折叠标量长文
+- 通读内容 → 手写 clean title（10-30 字）→ 推导 slug → `patch` 更新 frontmatter
+
+> ⚠️ **常见错误**：先上传 → 拉回后再改 slug。这会导致旧 URL 404。务必在 Phase 1 之前改好。
 
 ### Phase 1: 上传原始文件到 Halo (create)
 
@@ -258,11 +258,13 @@ python "C:/Users/zhaid/AppData/Local/hermes/skills/obsidian-halo/scripts/auto-nu
 > 1. 用 `execute_code` 一次性读取文件
 > 2. 构造 `[(h3_text, unique_anchor), ...]` 列表（每章 ≥2 个）
 > 3. 对每条，`content.count(anchor) == 1` 后 `content.replace(anchor, h3 + anchor, 1)`
-> 4. **关键先检查各 anchor 的唯一性**：同一锚句话可能在不同章节复用（如"例如："、"这种方法适合："——这些不能做 anchor，必须用足够长的上下文区分）
-> 5. **跨章节 anchor 碰撞**：一个锚句可能在 A 章节和 B 章节都出现（如"你搭的这个 vault"既是第 10 章的引言又是第 11 章的内容描述）。替换后 H3 会出现在错误章节，破坏编号顺序。**修复**：每个 anchor 替换前用 `content.count(anchor)` 确认唯一性。替换后立即用 `search_files pattern="^#{1,4} "` 检查 H3 的行号顺序——如果 `10.2` 排在 `11.1` 之后、`11.2` 之前，说明 anchor 匹配错误。用 `write_file` 一次性重写正文修复。
-> 6. 全部替换完后 `re.findall(r'^### \d+\.\d+ ', content, re.MULTILINE)` 验证总数
+> 4. **关键先检查各 anchor 的唯一性**
+> 5. **跨章节 anchor 碰撞**：详见 `references/h3-insertion-technique.md`（如"你搭的这个 vault"既是第 10 章的引言又是第 11 章的内容描述）。替换后 H3 会出现在错误章节，破坏编号顺序。**修复**：每个 anchor 替换前用 `content.count(anchor)` 确认唯一性。替换后立即用 `search_files pattern="^#{1,4} "` 检查 H3 的行号顺序——如果 `10.2` 排在 `11.1` 之后、`11.2` 之前，说明 anchor 匹配错误。用 `write_file` 一次性重写正文修复。
+> 6. 详见 `references/h3-insertion-technique.md` — 含验证、代码块污染、批量规划等全部陷阱
 > 7. 用 `write_file` 一次写回，不要逐个 `patch`
 > 8. **验证**：`terminal` 工具执行 `wc -c` 确认文件大小合理，然后用 `search_files pattern="^#{1,4} "` 确认每章 H3 ≥ 2 **且 H3 行号顺序正确**（10.1 < 10.2 < 11.1 < 11.2）
+>
+> ℹ️ 详见 `references/h3-insertion-technique.md` 的**问题 E**（H3 插入代码块内部）、**问题 F**（H3 与下文合并）和**问题 G**（批量规划效率）。
 
 > **⚠️ inline code 替换陷阱**：用 `content.replace()` 做行内代码格式化时，如果 old_string 太短（如 `OpenAI`），可能意外命中文件中其他位置的同一文字。**始终用足够长的上下文做 old_string**（如 `OpenAI 官方对 Codex 的定位是` 而非裸 `OpenAI`）。且链式 replace 中每个替换都会改变后续内容，前面的替换不会影响后面替换的匹配位置（`replace` 操作的是已替换后的完整字符串）。
 >
@@ -272,41 +274,18 @@ python "C:/Users/zhaid/AppData/Local/hermes/skills/obsidian-halo/scripts/auto-nu
 
 #### 第二步：Heading 层级决策 Checklist（必做）
 
-- [ ] **重复编号检查**：auto-number 后立即 `search_files` 确认所有 `##` 和 `###` 编号唯一。特别注意四种场景：(a) 若有两个 `2.1` 或两个 `3.1`，说明结论句被误转为 H3，按陷阱 48 修复；(b) 若有 `## N. N.` 格式（如 `## 1. 1\\. Title`），说明 `\\.` 转义编号被 auto-number 二次编号，按陷阱 49 修复；(c) 若有 `### N.N N.N 标题` 格式（如 `### 1.1 1.1 六项能力跃迁`），说明 auto-number 把原始 `**1.1 标题**` 的编号和自己的编号都保留了。用一条 regex 修复：`re.sub(r'^(### \\d+\\.\\d+) \\d+\\.\\d+ ', r'\\1 ', content, flags=re.MULTILINE)`。(d) H3 双重编号从粗体→H3 转换产生时（如 `### 3.1 1\\. 假设清单`），原始 `**1\\. 假设清单**` 的 `1.` 编号被 auto-number 保留 + 新编号前缀生成双重。用 `re.sub(r'^(### \\d+\\.\\d+) \\d+\\. ', r'\\1 ', content, flags=re.MULTILINE)` 修复（注意不带反斜杠转义的 `.` 匹配的是文字点号，与陷阱 49 的 `\\.` 转义格式不同）。
-- [ ] **body H1 检查（区分 auto-number 添加 vs 原文自带）**：auto-number.py 会自动从 frontmatter title 补一个 H1 到正文。但 Halo 主题已从 frontmatter 渲染标题。此时需区分两种情况：
-  - **auto-number 添加的 H1**（原文无 H1，auto-number 报告"补了 H1"）：立即删除（替换为空字符串），因为主题已从 frontmatter 渲染了标题。
-  - **原文自带的 H1**（如翻译文章、原创文章本身就有的 `# 标题`）：**保留**。正文 H1 是文章结构的一部分，Halo 页面有两个同文 H1（主题 + 正文）是正常的——参见陷阱 6。
-  
-  **判断方法**：auto-number 输出中如果出现"补了 H1"则说明是添加的；如果出现"无需补充 H1"说明本身就是原文自带的。用 `search_files pattern="^# "` 确认后再决定删除或保留。
-
-- [ ] **完整层级（所有文章默认三级）**：正文需要 `#`（H1 文章标题）→ `##`（H2 章节）→ `###`（H3 子节），至少 3 级交替。**纯 H2 无 H3 = 扁平目录，禁止**——每章至少拆 2 个子节。H3 以下用有序/无序列表，不要 H4+。
-- [ ] **多版本文章结构**：当文章包含多个独立版本/案例（如不同角色的 AI 视频 prompt），用 `---` 分隔版本，每个版本用 `## N. 版本名` 编号，结尾加 `## 总结` 收束。版本内部：元属性（风格/时长/场景/角色）用加粗标头 + 分镜用独立代码块。不要把所有版本塞在同一章内。
-- [ ] **逐章验证 H3 数量 ≥2**：使用快速法或脚本法：
-  **快速法（推荐）**：`search_files pattern="^#{1,4} "` 查看带行号的 heading 列表。从行号间隔判断每章 H3 数——如果两个相邻 H2 的行号差 <4（中间无 H3 行），说明该章缺少子节。示例输出中 `30: ## 1. ...\n34: ### 1.1\n38: ### 1.2\n42: ## 2. ...` 即表明第 1 章有 2 个 H3。
-  **脚本法**：用 `python3 << 'PYEOF'` 按章节分组精确统计：
-  ```python
-  # 检测方法
-  with open(path) as f:
-      lines = [l.strip() for l in f]
-  ch = None; h3s = 0
-  for l in lines:
-      if l.startswith('## ') and l[3].isdigit():
-          if ch and h3s < 2: print(f'⚠️  {ch} 只有 {h3s} 个 H3')
-          ch = l.split('## ')[1]; h3s = 0
-      elif l.startswith('### '): h3s += 1
-  if ch and h3s < 2: print(f'⚠️  最后章节 {ch} 只有 {h3s} 个 H3')
-  ```
-  **常见修复**：不足 2 个 H3 的章节通常是定义区（列出了触发/停止/适用场景等属性但没有独立 H3）。在章节开头补 `### N.1 定义与适用场景`（从列表上方提取核心描述）即可达到 ≥2。不要删除原有 H3——修正方向是**补**不是删。
-- [ ] **X.Y 子节编号**：H3 子节必须带章节编号前缀。如第 4 章的子节为 `### 4.1 正文长度`、`### 4.2 正文的内容框架`，第 5 章为 `### 5.1` ~ `### 5.4`。不要出现「4.1 一、正文长度」这类冗余中文编号。
-- [ ] **X Article blockquote 标题**：`> **一、章节名**` → `## N. 章节名`
-- [ ] **「第 X 步」冗余清理**：auto-number 会让教程型文章的 `## 第 0 步 准备清单` 变成 `## 1. 第 0 步 准备清单`。用 Python `re.sub` 批量去掉冗余的「第 N 步」前缀（`r'(## \d+\.)第 \d+ 步 '` → `\1`），使标题干净为 `## 1. 准备清单`。
-- [ ] **子步骤 H2 → H3 降级**：auto-number 不认识 `## 1、创建 API Key` / `## 2、下载 opencode` 这类子步骤格式，把它们编号为 H2。AI 必须：①分析哪些 H2 是其他章节的子步骤（一级结构 vs 二级结构）；②将它们降级为 `### X.Y` 并放在正确的父 H2 下。此步必须手动用 `write_file` 或 `execute_code` 一次性重写完整正文，不要逐个 `patch`。
-- [ ] **中文数字标题补齐（十一~十九等）**：auto-number 的 H2 格式化只处理单字中文数字（`一、`~`十、`），不处理多字（`十一、`~`十九、`）。如果 Phase 3b 后 H2 仍含 `十一、` `十二、` 等前缀，用 `re.sub(r'^## (\\d+\\. )(?:十一、|十二、|十三、|十四、|十五、)', r'^## \\1', content, flags=re.MULTILINE)` 批量清理。
-- [ ] **中文数字前缀清理（`## N. 一、` → `## N. `）**：auto-number 将 `# 一、标题` 转为 `## N. 一、标题` 后，H2 编号和中文数字同时存在（如 `## 1. 一、标题`）。用 `re.sub(r'^(## \\d+\\.)[一二三四五六七八九十][、，]? ', r'\\1 ', content, flags=re.MULTILINE)` 一键清理。对十一~十九做二次处理。
-- [ ] **断章检测（`## ：` 空内容标题）**：某些 X 剪藏的 `## 九、` 可能因复制异常变成 `## ：`（缺了中文数字）。auto-number 不会报错，编号后变成 `## 13. ：`。`search_files pattern="^## \d+\. ："` 有命中即需修复。
-- [ ] **断章标题检查**：X 剪藏文章的中文数字章节标题可能丢失数字，变成 `## ：标题`（只剩冒号）。检测方法：`search_files pattern="^## \d+\. ："`，有命中即需从上下文推测章节编号后修复。
-
-> **💡 编号做法**：H2 章节编号（`## 1. 标题` → `## 8. 标题`）推荐用 Python `re.sub` + `MULTILINE` 一行完成，不做 N 个独立 patch。详见陷阱 32 的代码示例。
+- [ ] **重复编号检查**：auto-number 后 `search_files` 确认所有 `##` 和 `###` 编号唯一。常见冲突：结论句被误转 H3、`\\\\.` 转义编号二次编号、粗体→H3 转换双重编号。用 `re.sub` 正则去重。
+- [ ] **body H1 检查**：auto-number 报告「补了 H1」→ 立即删除（主题已渲染标题）；报告「无需补充」→ 保留（原文自带 H1）。用 `search_files pattern="^# "` 确认。
+- [ ] **完整三级层级**：`#` → `##` → `###`，每章至少 2 个 H3。禁止纯 H2 扁平结构。H3 以下用列表，不切 H4+。
+- [ ] **多版本文章结构**：多版本/案例用 `---` 分隔，`## N. 版本名` 编号，结尾 `## 总结`。
+- [ ] **逐章验证 H3 ≥ 2**：`search_files pattern="^#{1,4} "` 快速检查行号间隔。不足的在章节开头补 `### N.1 定义与适用场景`。详见 `references/h3-insertion-technique.md`。
+- [ ] **X.Y 子节编号**：`### 4.1 标题` 格式，不要「4.1 一、标题」中文冗余。
+- [ ] **blockquote 标题**：`> **一、章节名**` → `## N. 章节名`
+- [ ] **「第 X 步」冗余清理**：`r'(## \\d+\\.)第 \\d+ 步 '` → `\\1`
+- [ ] **H2→H3 降级**：auto-number 把子步骤编为 H2（`## 1、创建 API Key`），降级到正确父章节下。
+- [ ] **中文数字清理**：`re.sub(r'^(## \\d+\\.)[一二三四五六七八九十十一十二][、，]? ', r'\\1 ', content, flags=re.MULTILINE)` 一键清除中文数词前缀。注意十一~十九的二级处理。
+- [ ] **断章检测**：`search_files pattern="^## \\d+\\. ："` 确认无 `## ：` 空标题。有则从上下文推测修复。
+- [ ] **编号做法**：H2 编号推荐 `re.sub` + `MULTILINE` 一行完成，不做 N 个独立 patch。
 
 #### 第三步：补充分类/标签 + 排版优化
 
@@ -381,26 +360,9 @@ python "C:/Users/zhaid/AppData/Local/hermes/skills/obsidian-halo/scripts/auto-nu
   - `---` 分隔线 — 只在**主题大切换**处使用。判断标准：读者读到此处应有一个自然的「换气」停顿。一般 2-3 条分隔线即可，不要每章之间都加。
   - `**结论句独立成行**` — 段落末尾的观点提炼句，加粗后单独一行。读完后自然形成视觉锚点，比埋在段落里更容易被记住。
 
-- **结论标题测试（借鉴 CyberPPT）**：H2 章节标题应当是**可辩护的判断句**，而非标签。用「弱标题 vs 强标题」自检：
-  - ❌ 弱：`## 3. 市场概览` → 只是标签，没有观点
-  - ✅ 强：`## 3. 市场增长正在修复，但价值正在向结构性优势赛道转移`
-  - ❌ 弱：`## 5. 消费者分析` → 不知道要说什么
-  - ✅ 强：`## 5. 核心消费者继续扩大，但购买逻辑更加分化`
-  
-  强标题必须是「可以被页面证据挑战并守住」的完整判断。如果标题改成判断句后觉得证据撑不住，说明章节内容本身需要补强，而不是退回标签。每写完一个 H2，花 5 秒问自己：「这个标题有没有结论？」
+- **写作风格指南（结论标题 + 证据层级）**：见 `references/writing-style-guide.md`。深度的长文/原创文章才走完整流程，日常剪藏文章无需每节都判断标题是不是判断句。
 
-- **证据层级结构（借鉴 CyberPPT）**：每节正文按「结论→主证据→次级证据→解读→含义」的顺序组织，不要只摆图表/数据不说明它证明了什么。一篇长文中至少 2-3 节完整走完这个层级：
-  1. **结论** — 该节的核心判断（对应 H2/H3 标题）
-  2. **主证据** — 最强的一两个数据、事实或引用来支撑结论，标记来源
-  3. **次级证据** — 细分数据、对比、趋势拆解（可选，看篇幅）
-  4. **解读** — 这些证据放在一起说明了什么（连接证据和结论的逻辑链）
-  5. **含义 / SO WHAT** — 读者为什么要关心这个？影响是什么？下一步行动？
-
-  最低要求：每节至少要有「结论 + 证据 + 含义」三层。避免「只有数据没有解读」或「只有观点没有证据」。
-
-  **X 剪藏必做 cleanup（比普通文章多三步）：**
-  1. 剥离 X 线程回复元数据：「引用」、用户名、`@`、时间戳、`发布你的回复`、`由 AI 生成`、点赞数、视频时长标签等 X UI 元素——全部从正文中删除。它们属于网页 UI，不应出现在文章正文段落。\n  2. 检查文章是否为结构化 prompt 分享（含 `【风格】`/`【场景】`/`【角色】`/`【时长】` 或 `[00:XX-00:XX]` 时间码）。如果是：元属性段（【风格】【时长】【场景】【角色】）用 `**【属性名】**` 加粗标头 + 正文保留在代码块外；分镜段（含时间码的镜头描述）按 `[00:XX-00:XX]` 自然分界**拆成多个独立 ` ```text ` 代码块**，每个场景一块。用 `---` 分隔元属性与分镜，分镜部分前加 H3 `### 分镜详情`。\n  3. 拆分后全文搜「引用」、「发布你的回复」、「没有项目」、「由 AI 生成」等——不可有任何残留。
-  **拆分后搜索「引用」、「发布你的回复」、「没有项目」、「由 AI 生成」等——不可有任何残留。**
+  **X 剪藏 cleanup**：Phase 0.5 已用 `x-clip-purify` 处理过，此处只需全文搜索确认无残留。如果 Phase 0.5 未处理，在此补跑 `x-clip-purify clean <file>`。
 
   - **Mermaid 多图最佳实践**：已安装 `halo-sigs/plugin-text-diagram` 插件。流程图中优先用 ` ```mermaid ` 而非 ` ```text ` 箭头。见 `references/halo-mermaid-rendering.md`。
   - **export-markdown 产物为 CRLF 行尾**：在 Windows git-bash 中处理时，所有 regex 匹配需考虑 `\r\n` 变体，或优先用 `str.replace()` 精确替换。
@@ -532,9 +494,9 @@ curl -s "https://jia.baoyu2023.top/archives/<slug>?nocache=1" | grep "<title>"
 | 脚本 | 作用 |
 |------|------|
 | `scripts/auto-number.py <file>` | **自动编号 H2/H3 标题**，支持 0.N- / 一、/ 纯文本；补 H1；粗体→H3；剥离 X 自介内容；叙事文章按图片分段；`--check` 仅检视 |
-| `scripts/obu_extract.py <article_url> <output.json>` | Python 版 obu 视频提取器（替代旧 sh 版），自动找播放按钮 → 点击 → 提取 CDN URL（best-effort）；**始终在 `finally` 块执行 `finalize-tabs` 清理** |
 | `scripts/verify-article.py <file>` | 独立文章完整性验证 |
 | `scripts/halo-migrate-images.py <file>` | 扫描外部图片→下载→生成 Halo 上传命令 | 防盗链图片迁移；已推送到 GitHub 仓库 |
+| `scripts/obu_extract.py` | ⚠️ **已废弃**，X Article 视频无法通过任何 CLI 工具或 CDP 自动化下载 | 见 `references/x-article-video-handling.md` 和 `references/cat-catch-video-workflow.md` |
 
 参考文件：
 | 文件 | 作用 |
@@ -547,6 +509,7 @@ curl -s "https://jia.baoyu2023.top/archives/<slug>?nocache=1" | grep "<title>"
 | `references/halo-publish-script.md` | Python 脚本各功能说明（detect/cleanup/enhance/verify） |
 | `references/halo-api-notes.md` | Halo API 注意事项与常见问题 |
 | `references/heading-hierarchy.md` | 文章 heading 层级规范详解 |
+| `references/writing-style-guide.md` | 写作风格指南：结论标题测试、证据层级结构（CyberPPT） |
 | `references/obu-cdp-patterns.md` | obu + CDP 调试模式和代码片段 |
 | `references/twitter-video-cleanup.md` | Twitter 视频嵌入的清理流程 |
 | `references/video-codec-compatibility.md` | 视频编码兼容性（HEVC → H.264） |
@@ -672,11 +635,14 @@ curl -s "https://jia.baoyu2023.top/archives/<slug>?nocache=1" | grep -oP '<title
 26. **视频编码兼容性（HEVC → H.264）**：上传到 Halo 的视频如果用手机录制，很可能是 HEVC/H.265 编码。Chrome 能播，但 Firefox/Zen Browser 报 `NS_ERROR_DOM_MEDIA_METADATA_ERR`。修复方法见 `references/video-codec-compatibility.md`。
 27. **优先用文件级方案，不绕 CMS API**：遇到上传的视频/图片在部分浏览器出问题时，优先替换服务器文件本身，不要试图通过 Halo API 修改页面内容来换 URL。
 28. **export-markdown 会覆盖本地文件**：跑完 export 后本地文件被 Halo 端内容完全替换。如果 import/update 未正确执行（如被 `halo.name` 跳过），export 会把**旧内容**拉回来覆盖你的本地修改。**先确认 Halo 端的文章内容正确，再 export 同步回本地**。
-（陷阱 29~68 已在历史版本中废弃或合并）\n（陷阱 30~71 已在历史版本中废弃或合并到 `halo-theme-css` skill 中。\n\n69. **代码块内的假 heading 被当作真实标题**：当教程文章的 markdown 代码块中展示了一道「CLAUDE.md 示例内容」，里面含有 `## knowledge` 或类似 heading 文本时，auto-number 的 H2 编号可能跳过该真实标题，或者后续 AI 的 renumber 操作把代码块内的示例文本当成真实 heading 一起修改——导致代码块内出现 `## 11. 知识库的核心结构` 这种**看起来像 heading 实际是代码**的混乱。**修复**：① 在 auto-number 后，用 `search_files pattern=\"^#{1,4} \"` 对比实际渲染的 H1/H2/H3 数量与预期数量；② 如果某章节 heading 出现在预期不该有的位置（比如 header 列表中第 10 章和第 12 章之间的 heading 来自代码块），用 `write_file` 一次性还原被污染的代码块内容；③ **永不信任 `search_files` 输出的绝对精确性**——页面渲染以 `browser_console` 的 `querySelectorAll('hN').length` 为准。④ 预防措施：在 `rename_h2()` 操作后，立即检查代码块范围内有无 `##` 行被误改。
 
-70. **⚠️ `<details>` HTML 标签与 markdown 代码块混合导致文章后半部分被截断**：Halo 的 markdown 解析器对 HTML 包裹 markdown 代码块（如 `<details>` 内嵌 ` ```mermaid ```）的支持不稳定。当文章中出现此类结构时，Halo 可能在该标签处提前终止渲染——后端存了完整内容，但页面只显示到标签之前的部分。**修复**：保持纯 markdown 语法，绝不混用 HTML 标签包裹 ` ``` ` 代码块。如果要从 `` ```text `` 迁到 `` ```mermaid ``，直接改语言标识，不要加 HTML 外壳。纯 HTML 布局（如图片 `<div align="center">`）不含嵌套代码块是安全的。
+（陷阱 29-68 已在历史版本中废弃）
 
-71. **⚠️ Halo/Fluid 主题 Mermaid 渲染器最多只处理前 2 个图**：一篇文章中堆 3+ 个 ` ```mermaid ``` 块时，第 3 个之后不会被渲染为 SVG。**修复**：合并小图为 1 张大图（`graph TD` 支持多节点），或把后面的图改回 ` ```text ` 纯文本格式。详见 `references/halo-mermaid-rendering.md`。
+29. **代码块内的假 heading 被当作真实标题**：当教程文章的 markdown 代码块中展示了一道「CLAUDE.md 示例内容」，里面含有 `## knowledge` 或类似 heading 文本时，auto-number 的 H2 编号可能跳过该真实标题，或者后续 AI 的 renumber 操作把代码块内的示例文本当成真实 heading 一起修改——导致代码块内出现 `## 11. 知识库的核心结构` 这种**看起来像 heading 实际是代码**的混乱。**修复**：① 在 auto-number 后，用 `search_files pattern=\"^#{1,4} \"` 对比实际渲染的 H1/H2/H3 数量与预期数量；② 如果某章节 heading 出现在预期不该有的位置（比如 header 列表中第 10 章和第 12 章之间的 heading 来自代码块），用 `write_file` 一次性还原被污染的代码块内容；③ **永不信任 `search_files` 输出的绝对精确性**——页面渲染以 `browser_console` 的 `querySelectorAll('hN').length` 为准。④ 预防措施：在 `rename_h2()` 操作后，立即检查代码块范围内有无 `##` 行被误改。
 
-72. **Python `urllib` PUT 返回 403 但 curl 正常**：用同一 PAT 调用 Halo ConfigMap API，GET 正常（`urllib` 和 `curl` 都可以），PUT 回写时 `urllib.request.urlopen(req)` 返回 403 但 `curl -X PUT` 成功。这是 Python 标准库 HTTP 实现的差异。**修复**：ConfigMap PUT 回写始终用 `curl`，不要用 Python `urllib`。
+30. **`<details>` HTML 标签与 markdown 代码块混合导致文章后半部分被截断**：Halo 的 markdown 解析器对 HTML 包裹 markdown 代码块（如 `<details>` 内嵌 ` ```mermaid ```）的支持不稳定。当文章中出现此类结构时，Halo 可能在该标签处提前终止渲染——后端存了完整内容，但页面只显示到标签之前的部分。**修复**：保持纯 markdown 语法，绝不混用 HTML 标签包裹 ` ``` ` 代码块。如果要从 ` ```text ` 迁到 ` ```mermaid ``，直接改语言标识，不要加 HTML 外壳。纯 HTML 布局（如图片 `<div align=\"center\">`）不含嵌套代码块是安全的。
+
+31. **Halo/Fluid 主题 Mermaid 渲染器最多只处理前 2 个图**：一篇文章中堆 3+ 个 ` ```mermaid ``` 块时，第 3 个之后不会被渲染为 SVG。**修复**：合并小图为 1 张大图（`graph TD` 支持多节点），或把后面的图改回 ` ```text ` 纯文本格式。详见 `references/halo-mermaid-rendering.md`。
+
+32. **Python `urllib` PUT 返回 403 但 curl 正常**：用同一 PAT 调用 Halo ConfigMap API，GET 正常（`urllib` 和 `curl` 都可以），PUT 回写时 `urllib.request.urlopen(req)` 返回 403 但 `curl -X PUT` 成功。这是 Python 标准库 HTTP 实现的差异。**修复**：ConfigMap PUT 回写始终用 `curl`，不要用 Python `urllib`。
 
