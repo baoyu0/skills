@@ -29,6 +29,11 @@
 |---|---|
 | [hermes-memory-bridge](integration/hermes-memory-bridge/) | 桥接 Hermes 桌面端记忆系统到其他 AI Agent。让 pi / Claude Code / Codex 也能读取 Hermes 的 USER.md 用户画像和结构化事实库，实现双向记忆同步 |
 
+### 网络代理 (network)
+| Skill | 说明 |
+|------|------|
+| [karing-routing](network/karing-routing/) | Karing 路由规则管理 — 添加直连域名、诊断代理故障、重启服务。`karing-route add <路由组> <域名>` |
+
 ### 工具 (tools)
 | Skill | 说明 |
 |------|------|
