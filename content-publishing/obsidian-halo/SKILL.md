@@ -63,7 +63,10 @@ python "C:/Users/zhaid/.hermes/scripts/halo-migrate-images.py" "<文件绝对路
 
 **翻译规则（AI 手动执行）：**
 1. 用 `read_file` 读取文件的 **body 部分**（去掉 frontmatter）
-2. 翻译 body 为简体中文，**保留以下元素不变**：
+2. 判定文章类型：
+   - **普通文章**（<15KB，非论文）：全量翻译 body
+   - **技术论文/长文**（≥15KB，含大量学术引文、数学公式、代码、参考文献）：**中文摘要 + 英文正文**。翻译声明 > 中文导读（200-400 字说明文章核心论点与结构）→ `--- Start of English original ---` → 保留完整英文正文。学术引文和公式不应翻译。
+3. 翻译 body 为简体中文，**保留以下元素不变**：
    - 代码块（含语言标注）
    - URL 和链接文本
    - 专有名词（GitHub, Kubernetes, API 等）
@@ -150,7 +153,7 @@ with open('$HOME/.hermes/halo-state.json', 'w') as f: json.dump(state, f, ensure
 
 > **🔴 CHECKPOINT：UUID 已保存，确认 `halo post get` 返回正常后再进入 Phase 2 拉取 frontmatter。**
 
-> ⚠️ **Slug 由 Halo 自动生成，无需手动处理**：slug 和 cover 一样，import-markdown 时 Halo 会自动从 title 生成，export-markdown 拉回 frontmatter 时自动包含。**不需要手动改 slug**——Halo 生成的就够了。如果 slug 确实太短（如 `17`），在 Phase 4 用 `halo post update <UUID> --slug <new-slug>` 修正，但通常不需要。
+> ⚠️ **Slug 由 Halo 自动生成，但检查是否太泛**：import-markdown 时 Halo 从 title 生成 slug。生成后立即检查——如果 slug 是 `skill`、`post`、`article` 等单字泛词，说明 title 解析不足，在 Phase 4 用 `halo post update <UUID> --slug <better-slug>` 修正。通常生成的 slug 够用（如 `cloudflare-ai-api`），只有 title 首词太通用时才出问题。
 >
 > ⚠️ **`halo.name` 拦截陷阱**
 > **修复**：删掉 frontmatter 中的 `halo.name`（以及整个 `halo:` 区块）后再 import。import 成功后先 publish，再 export 拉回完整的 frontmatter（含新的 `halo.name`）。
@@ -180,6 +183,7 @@ halo post export-markdown <UUID> --output "<文件绝对路径>" 2>&1
 如果 `cover` 仍为空，Halo 端可能还没生成完，稍等几秒再跑一次 export。
 
 > ⚠️ pull 后正文可能含多余空行（段落间 3 个空行），AI 在 Phase 3 做排版优化时处理。
+> ⚠️ **export-markdown 可能降级 heading 层级**：Halo 导出时会把 `##` → `#`、`###` → `##`，导致所有章节变成 H1。**必须**在 Phase 3 开始前用 `search_files pattern="^#{1,4} "` 检查 heading 级别是否正常。如果发现所有 H2 变成了 H1，按陷阱 33 修复。
 > ⚠️ `source` / `author` / `description` 等非 Halo 标准字段会被 Halo 丢弃，export 后不会出现。这是正常行为——**不要手动补加**。
 > ⚠️ **`slug` / `title` / `halo.*` 等 Halo 已有字段不要重写**——export 拉回来的就是标准，保持原样。
 
@@ -270,11 +274,24 @@ python "C:/Users/zhaid/AppData/Local/hermes/skills/obsidian-halo/scripts/auto-nu
 >
 > **⚠️ 中文引号锚点陷阱**：在 `execute_code` 中用 `content.replace()` 时，如果 anchor 字符串包含**中文全角引号**（`"` U+201C / `"` U+201D），Python 解释器可能将它们误判为 ASCII 双引号，导致 SyntaxError。即使编辑器显示正常，Python 解析器也会在 `"` 处认为字符串已结束。**修复**：① 避免 anchor 中含有 `"`/`"`/`「`/`」` 等特殊引号字符；② 或将包含引号的文本提取到变量中再使用；③ 对于表格行中的中文引号，改用不含引号的唯一前缀做 anchor。
 >
-> **⚠️ `execute_code` 文件大小异常**：在 `execute_code` 环境中调用 `len(content)` 或 `os.path.getsize()` 可能返回不一致的值（如 7KB 当文件实际为 14KB）。这是因为 sandbox 环境的文件系统映射偏差。**修复**：每次 `write_file` 后，用 `terminal` 工具执行 `wc -c` 或 `wc -l` 确认真实文件大小。
+> **⚠️ `execute_code` 文件操作陷阱（致命！）**：
+> 1. **文件大小异常**：`len(content)` 或 `os.path.getsize()` 可能返回不一致的值（7KB 当文件实际为 14KB）。
+> 2. **`write_file` 静默不持久化**：`write_file` 返回 `success:true` 但实际文件未被修改。这是 sandbox 环境文件系统映射偏差的另一种表现——写入的是一份临时副本而非真实文件。本 session 亲眼验证：`execute_code` 报告「✅ H3 1.1 inserted」但实际文件无任何变化。
+> 3. **混合行尾导致 frontmatter 变形**：当文件初始为 CRLF（Halo export-markdown 产物），用 `execute_code` + `write_file` 写入 LF 内容后又用 `terminal` 写回 CRLF，frontmatter 会出现空白行扩散——每行 YAML 字段间多一个空行，后续 import-markdown 虽能解析但文件难看。
+>
+> **根因**：`execute_code` 运行在 Hermes sandbox 中，该 sandbox 有自己的文件系统视图（tmpfs 映射），对 `write_file` 的写入不会同步回宿主的真实文件系统。`read_file` 在 sandbox 和 `terminal` 之间也可能看到不同内容。
+>
+> **修复规则（重要）**：
+> - **所有文件写入（增删改正文、修改 frontmatter、插入 H3）必须用 `terminal` 工具 + `python3 -c` 或独立 `.py` 文件执行**。不要用 `execute_code` + `write_file` 做任何有副作用的写操作。
+> - `execute_code` **只用于只读分析**（统计文件大小、锚点匹配检查、构造替换计划）。
+> - 如果已经用 `execute_code` 写了文件，立即用 `terminal` + `wc -c` 确认真实文件大小。如果 `terminal` 报告的字节数与 `execute_code` 报告的 `len(content)` 偏差超过 2×，说明 sandbox 映射偏差——**丢弃 `execute_code` 的写结果**，改用 `terminal` `python3 -c` 重做。
+>
+> **简便方案**：从头到尾只用一个 `terminal` + `python3 -c` 脚本完成所有处理，中间不要调用 `write_file`。
 
 #### 第二步：Heading 层级决策 Checklist（必做）
 
 - [ ] **重复编号检查**：auto-number 后 `search_files` 确认所有 `##` 和 `###` 编号唯一。常见冲突：结论句被误转 H3、`\\\\.` 转义编号二次编号、粗体→H3 转换双重编号。用 `re.sub` 正则去重。
+- [ ] **auto-number H3 标题残留清理**：source 中 `**2\. 乱码**` 被转为 `### 12.1 2\. 乱码`，源列表序号（`2.`）混入了标题。在 Phase 3c 做一次 `re.sub(r'^### \d+\.\d+ \d+\. ', lambda m: m.group(0).replace(m.group(0).split(' ', 2)[2], ''), content, flags=re.MULTILINE)`，或手动检查每章的 H3 标题前缀是否干净。
 - [ ] **body H1 检查**：auto-number 报告「补了 H1」→ 立即删除（主题已渲染标题）；报告「无需补充」→ 保留（原文自带 H1）。用 `search_files pattern="^# "` 确认。
 - [ ] **完整三级层级**：`#` → `##` → `###`，每章至少 2 个 H3。禁止纯 H2 扁平结构。H3 以下用列表，不切 H4+。
 - [ ] **多版本文章结构**：多版本/案例用 `---` 分隔，`## N. 版本名` 编号，结尾 `## 总结`。
@@ -298,6 +315,12 @@ python "C:/Users/zhaid/AppData/Local/hermes/skills/obsidian-halo/scripts/auto-nu
 5. **验证 frontmatter 完整性**：`write_file` 写回前，用 `read_file` 读前 15 行确认 `categories:` 有值、`tags:` 有值（非空列表）。如果留空，import-markdown 后 Halo 端分类/标签会消失。
 4. `write_file` 写回
 
+> **H3 例外：短节叙事章节** — 当某章节为 X 线程段落、仅 2-5 段时，该章无需强制拆 2 个 H3。例外的判断标准：该节能否在不看内容的情况下从 H3 标题知道它讲什么？如果不能（「1.1 更多细节」），说明 H3 是强加的，跳过这段。
+>
+> ⚠️ **例外只豁免 H3，不豁免 H2。** 叙事文章仍需按内容语义拆出 H2 章节。用户会抱怨「没有子章节不结构化，读起来累」。一篇 3000+ 字的纯叙事文章，最少也要 4-6 个 H2 按主题切分（开篇案例、核心观点、展开论证、案例二、分析、结尾）。
+>
+> 例外不适用于长教程（章节 5-15 段）、技术解析文章、结构性内容（如「四层配套」「三件事」）。这些必须每章 ≥2 个 H3。
+
 #### 排版优化 Prompt
 
 在写回前，对正文执行以下排版规则：
@@ -318,6 +341,7 @@ python "C:/Users/zhaid/AppData/Local/hermes/skills/obsidian-halo/scripts/auto-nu
 - **图片**：前后各留一个空行，alt 文本应有语义（非 `![图像]`），禁止空 `![]()`
 - **连续图片**：多张图片之间只留一个空行，避免视觉堆积
 - **代码块**：前后各留一个空行，必须标注语言（如 ` ```python `、` ```bash `），禁止裸 ` ``` `
+- **HTTP 请求/响应示例**：用 `①②③④` 编号 + 完整 HTTP 头 + 可选的 JSON body，单 ` ```text ` 代码块。见 `references/http-request-examples.md`
 - **用户指令/prompt 示例**：以下两类 prompt 格式必须转为 ` ```text ` 代码块，代码块更清晰地分离「用户指令」和「文章正文」，且支持长 prompt 不破坏页面布局。
 
   **类型 A：`[text]` 引用格式** — X/Twitter 文章中常见的 `> **\[text\]** 指令内容`，作者用来表示"用户给 AI 的输入"。替换为 ` ```text ` 代码块。
@@ -364,17 +388,70 @@ python "C:/Users/zhaid/AppData/Local/hermes/skills/obsidian-halo/scripts/auto-nu
 
   **X 剪藏 cleanup**：Phase 0.5 已用 `x-clip-purify` 处理过，此处只需全文搜索确认无残留。如果 Phase 0.5 未处理，在此补跑 `x-clip-purify clean <file>`。
 
-  - **Mermaid 多图最佳实践**：已安装 `halo-sigs/plugin-text-diagram` 插件。流程图中优先用 ` ```mermaid ` 而非 ` ```text ` 箭头。见 `references/halo-mermaid-rendering.md`。
   - **export-markdown 产物为 CRLF 行尾**：在 Windows git-bash 中处理时，所有 regex 匹配需考虑 `\r\n` 变体，或优先用 `str.replace()` 精确替换。
 
 > **🔴 CHECKPOINT · 🛑 STOP：内容处理完毕。确认以下 3 项后再进入 Phase 4 发布：**
-> 1. ✅ heading 结构：H1→H2→H3，无重复编号
-> 2. ✅ 分类标签：`categories:` 和 `tags:` 非空（用 `read_file` 前 15 行确认）
-> 3. ✅ 排版满意
->
-> **⚠️ 如果 frontmatter 中 `categories:` 或 `tags:` 为空，import-markdown 后 Halo 端会丢失已有分类/标签。这是不可逆操作，发布后修复需要手动删掉重新 import。**
+  > 1. ✅ heading 结构：H1→H2→H3，无重复编号
+  > 2. ✅ 分类标签：`categories:` 和 `tags:` 非空（用 `read_file` 前 15 行确认）
+  > 3. ✅ 排版满意
+  >
+  > **⚠️ 如果 frontmatter 中 `categories:` 或 `tags:` 为空，import-markdown 后 Halo 端会丢失已有分类/标签。这是不可逆操作，发布后修复需要手动删掉重新 import。**
 
-### Phase 4: 推送更新到 Halo (update)
+  #### Phase 3e: Pre-Release Cleanliness Gate（发布前必做）
+
+  **目标：** 在 import 发布前自动扫描文章正文，捕获用户会抱怨「有点乱」的排版问题。ponytail 模式下也不跳过。
+
+  用 `terminal` + `python3 -c` 或独立 `.py` 文件扫描以下清单：
+
+  ```python
+  p = r"<文件绝对路径>"
+  with open(p, 'r', encoding='utf-8') as f:
+      content = f.read()
+  issues = []
+  import re
+
+  # 1. 裸代码块：``` 后无语言标识
+  for m in re.finditer(r'^```(\w*)$', content, re.MULTILINE):
+      if not m.group(1):
+          line_no = content[:m.start()].count('\n') + 1
+          issues.append(f"裸代码块（无语言标注）at line {line_no}")
+
+  # 2. 无意义 alt 文本
+  count_img = len(re.findall(r'!\[图像\]', content))
+  if count_img: issues.append(f"通用 alt 文本「图像」出现 {count_img} 次")
+
+  # 3. 连续 3+ 空行
+  lines = content.split('\n')
+  blank_run = 0
+  for i, l in enumerate(lines + ['']):
+      if l.strip() == '':
+          blank_run += 1
+      else:
+          if blank_run >= 3:
+              issues.append(f"段落间 {blank_run} 个连续空行 near line {i}")
+          blank_run = 0
+
+  # 4. 孤立序号行（不在列表/代码块内的裸 1. 2. 3.）
+  in_code = False
+  for i, l in enumerate(lines):
+      s = l.strip()
+      if s.startswith('```'): in_code = not in_code; continue
+      if in_code: continue
+      if re.match(r'^[1-9]$', s) and i > 0 and i+1 < len(lines):
+          if lines[i-1].strip() == '' and lines[i+1].strip() == '':
+              issues.append(f"孤立序号行「{s}」at line {i+1}，应放入 ```text 代码块")
+
+  if issues:
+      print("⚠️ 发布前扫描发现问题，修复后再进 Phase 4:")
+      for i in issues: print(f"  • {i}")
+      exit(1)
+  else:
+      print("✅ Cleanliness check passed")
+  ```
+
+  **FAILURE → STOP.** 修复所有问题后再进 Phase 4。
+
+  ### Phase 4: 推送更新到 Halo (update)
 
 **目标：将 AI 增强后的内容发布到 Halo。**
 
@@ -407,9 +484,26 @@ print('publish:', d.get('publish'), '←', '✅' if d.get('publish') else '❌ S
 
 > ⚠️ **`halo.name` 导致 heading 损坏（重要！）**：如果 frontmatter 中含 `halo.name`，`--force` 走的是「更新」流程而非「创建」。此时 Halo 会重新处理 heading 编号，导致 `# 3 个Skill` 变成 `# 1- 个Skill`、`## 1. 标题` 变成 `## 1.1- 标题`。**第一次上传文章时务必删除整个 `halo:` 块**，import 成功后再 publish → export 拉回含新 `halo.name` 的 frontmatter。后续用 `halo.name` 做 update 则不会损坏 heading。详见陷阱 43。
 
-#### 验证 heading 级别 + 同步回本地
+#### ⚠️ 验证发布是否真实生效（必做，不可跳过）
 
-发布后立即验证 heading 级别是否正确：
+`halo post update --publish true` 可以返回 `Post updated successfully` 但实际 `publish: false`（spec 中 DRAFT）。此时文章不被公开访问。
+
+**唯一可靠的验证方式**：
+
+```bash
+halo post get <UUID> --json 2>&1 | tail -n +2 | python3 -c "
+import sys, json
+full = sys.stdin.read()
+start = full.index('{')  # 跳过 TARGET 等非 JSON 前缀行
+d = json.loads(full[start:])['post']['spec']
+print('publish:', d.get('publish'), '←', '✅' if d.get('publish') else '❌ STILL DRAFT!')
+"
+# 如果 false，重跑一次 halo post update <UUID> --publish true 再验证
+```
+
+**false → DRAFT 的常见根因**：`import-markdown --force` 覆盖了 frontmatter 的 `publish: false` 状态。import 后必须重新 publish，且验证通过才行。
+
+然后是 heading 级别验证：
 
 ```bash
 halo post get <UUID> --json 2>&1 | python3 -c "
@@ -461,6 +555,8 @@ curl -s "https://jia.baoyu2023.top/archives/<slug>?nocache=1" | grep "<title>"
 
 如果发现问题，修改文件后重新 update。最多重新处理 2 次。
 
+**⚠️ `export-markdown` 后 heading 降级检查：** 同步回本地后立即用 `grep -n "^#" "<文件>"` 对比线上 heading 级别（`browser_console` 的 `querySelectorAll('hN').length`）。如果线上 H2=9 但本地 `##` 数量为 0（全部变成了 `#`），说明 Halo 导出时降级了 heading。此时用 Python 一键恢复（见陷阱 33 的完整代码），然后重新 import + publish。不要接受「本地不对但线上对」的状态——下次再打开文件修更麻烦。
+
 ---
 
 ## 命令参考
@@ -476,7 +572,22 @@ curl -s "https://jia.baoyu2023.top/archives/<slug>?nocache=1" | grep "<title>"
 | `auto-number <file>` | **自动编号 H2/H3** + 补 H1 + 剥离 X 自介内容 + 叙事文章按图片分段 | skill 的 `scripts/auto-number.py`；`--check` 仅检视不改动 |
 | `verify <file>` | 独立验证 | 可用 `halo post get` + curl 替代 |
 
-### 官方 CLI 命令（替代原 create/pull/update）
+### 可选：Phase 3.5 外部美化（用户说「丑」时调用）
+
+如果用户对文章排版不满意（「样子好丑」「能不能美化一下」），在 Phase 3 完成后、Phase 4 发布前，调用已安装的 **baoyu-format-markdown** skill 做二次美化：
+
+```bash
+# 加载 skill 分析 = 用户选 1（优化排版）
+# skill 的 Step 4 会加粗、code、引用块、分隔线
+# Step 6 跑 bun 排版脚本（CJK 标点修正）
+# 输出到 {filename}-formatted.md
+bun "C:/Users/zhaid/AppData/Local/hermes/skills/baoyu-format-markdown/scripts/main.ts" "<文件路径>" --no-spacing
+# cp formatted 覆盖原文件，再进 Phase 4 import
+```
+
+**注意**：bun 脚本在 48KB+ 文件上可能超时（默认 15s），加长 timeout 或用 `--no-spacing` 跳过耗时的 CJK 间距处理。
+
+**不是每次发布都用**——只在用户主动要求美化、或 Phase 3 排版优化后用户仍不满意时调用。
 
 | 操作 | 命令 | 说明 |
 |------|------|------|
@@ -636,7 +747,11 @@ curl -s "https://jia.baoyu2023.top/archives/<slug>?nocache=1" | grep -oP '<title
 27. **优先用文件级方案，不绕 CMS API**：遇到上传的视频/图片在部分浏览器出问题时，优先替换服务器文件本身，不要试图通过 Halo API 修改页面内容来换 URL。
 28. **export-markdown 会覆盖本地文件**：跑完 export 后本地文件被 Halo 端内容完全替换。如果 import/update 未正确执行（如被 `halo.name` 跳过），export 会把**旧内容**拉回来覆盖你的本地修改。**先确认 Halo 端的文章内容正确，再 export 同步回本地**。
 
-（陷阱 29-68 已在历史版本中废弃）
+(陷阱 29-68 已在历史版本中废弃）
+
+29. **`--publish true` 返回 success 但文章仍是 DRAFT（致命！）**：`halo post update <UUID> --publish true` 输出 `Post updated successfully`，但 `halo post get <UUID> --json` 显示 `spec.publish: false`（DRAFT）。根因：后续的 `import-markdown --force` 重新导入了含 `publish: false` frontmatter 的文件，把已发布文章打回了草稿。**修复**：每次 import 后必须重新 publish + 验证（见 Phase 4 的验证步骤）。不要信任 `update` 的 exit code。pal:在拖。
+
+30. **`halo post import-markdown --force --file <path>` 参数顺序错误**：`--force` 必须在 `--file` 后面。`halo post import-markdown --force --file "file.md"` 报错 `Unused args`。正确：`halo post import-markdown --file "file.md" --force`。
 
 29. **代码块内的假 heading 被当作真实标题**：当教程文章的 markdown 代码块中展示了一道「CLAUDE.md 示例内容」，里面含有 `## knowledge` 或类似 heading 文本时，auto-number 的 H2 编号可能跳过该真实标题，或者后续 AI 的 renumber 操作把代码块内的示例文本当成真实 heading 一起修改——导致代码块内出现 `## 11. 知识库的核心结构` 这种**看起来像 heading 实际是代码**的混乱。**修复**：① 在 auto-number 后，用 `search_files pattern=\"^#{1,4} \"` 对比实际渲染的 H1/H2/H3 数量与预期数量；② 如果某章节 heading 出现在预期不该有的位置（比如 header 列表中第 10 章和第 12 章之间的 heading 来自代码块），用 `write_file` 一次性还原被污染的代码块内容；③ **永不信任 `search_files` 输出的绝对精确性**——页面渲染以 `browser_console` 的 `querySelectorAll('hN').length` 为准。④ 预防措施：在 `rename_h2()` 操作后，立即检查代码块范围内有无 `##` 行被误改。
 
@@ -645,4 +760,33 @@ curl -s "https://jia.baoyu2023.top/archives/<slug>?nocache=1" | grep -oP '<title
 31. **Halo/Fluid 主题 Mermaid 渲染器最多只处理前 2 个图**：一篇文章中堆 3+ 个 ` ```mermaid ``` 块时，第 3 个之后不会被渲染为 SVG。**修复**：合并小图为 1 张大图（`graph TD` 支持多节点），或把后面的图改回 ` ```text ` 纯文本格式。详见 `references/halo-mermaid-rendering.md`。
 
 32. **Python `urllib` PUT 返回 403 但 curl 正常**：用同一 PAT 调用 Halo ConfigMap API，GET 正常（`urllib` 和 `curl` 都可以），PUT 回写时 `urllib.request.urlopen(req)` 返回 403 但 `curl -X PUT` 成功。这是 Python 标准库 HTTP 实现的差异。**修复**：ConfigMap PUT 回写始终用 `curl`，不要用 Python `urllib`。
+
+33. **`export-markdown` 会降级 heading 层级（致命！）**：用 `##` 章节标题 + `###` 子节标题的 markdown 通过 `import-markdown` 存入 Halo 后，再执行 `halo post export-markdown` 拉回本地时，所有 heading 会被降级一级：`##` → `#`、`###` → `##`。这是因为 Halo 的 markdown 导出器将 `#` 视为「文章标题」层级进行映射。**后果**：auto-number 报告「No H2 headings to number」，所有章节变 H1，需要手动全部修复。**检测方法**：export 后立即 `search_files pattern="^#{1,4} "` 确认 heading 级别与预期一致。**修复**：如果发现降级，在 Python 中用逐条替换恢复 H2：先补 `# 文章标题` 作为 body H1，再将 `# 原有章节标题` 改为 `## N. 原有章节标题`。注意 H3 也同步降级（原 `##`→H3 变成了 `#`→H2），需一并恢复。**预防**：在 Phase 3 内容处理开始前先 `search_files` 检查 heading 级别，发现异常先修复再继续。
+
+34. **`patch` 工具插入 H3 时不加换行（CRLF 文件特有）**：用 `patch ` 工具在段落后插入 H3 时，如果文件是 CRLF 行尾（export-markdown 产物），patch 可能把 H3 粘在前一句末尾，如 `句子结尾。### 1.1 标题`。原因：patch 工具的 CRLF↔LF 行尾处理中丢失了段落间空行。**修复**：用第二个 `patch` 拆开粘合行——`old_string="句子结尾。### 1.1 标题"` → `new_string="句子结尾。\n\n### 1.1 标题"`。**预防**：优先用 `terminal` + `python3 -c` 做 H3 插入，patch 只适用于简单文本替换。如果用 `patch`，插入后立即 grep 检查「`。###`」或「`了.###`」模式。
+
+35. **`patch` 在列表内插入 H3 导致列表结构污染（致命！）**：当 `patch` 的 `old_string` 匹配的段落是一个列表项（`- xxx`）时，H3 插入后会变成列表嵌套：`- xxx\n- ### N.N 标题`。H3 渲染在列表项内部而非独立标题。**修复**：用 Python `str.replace` 移除 `- ###` 前缀恢复为独立 `###`，同时验证前后的列表结构完整。**预防**：永远不要在列表项附近用 `patch` 插入 H3。先用 `terminal` + `python3 -c` 检查目标段落的上下文是否在列表内（`lines[i-1].strip().startswith('-')`）。如果是，将该段落前后相邻的 `- ` 列表项也纳入替换范围。
+
+36. **H1 插入前如果有 blockquote 会将其截断（CRLF 文件特有）**：在 frontmatter closing `---` 与 `> ` blockquote 之间插入 body H1 时，如果文件是 CRLF 行尾，`patch` 工具可能只复制了 `> ` 的前半部分，导致 blockquote 文本被截断——开头几个字丢失，后续文本变成普通段落。**修复**：用 `read_file` 检查 blockquote 第一句是否完整。用第二个 `patch` 补回被吞的文字：`old_string="> 前半句"` → `new_string="> 前半句后半句"`。**预防**：在 `---` 和 `> ` 之间插入 H1 时，用 `terminal` + `python3 -c` 一次性写入完整内容，不用 `patch`。
+
+38. **Python 反引号在 bash 中被吞噬（交互陷阱）**：在 `terminal` 中运行 `python3 -c "..."` 时，如果 Python 代码中包含反引号 ``` ``` ```（用于 markdown 代码块、regex 含 `^``` ` 等），bash 会把它解释为命令替换（command substitution），导致语法错误 `unexpected EOF while looking for matching ``'`。**修复**：用独立 `.py` 文件执行含反引号的 Python 代码，通过 `write_file` + `python3 script.py` 两步走。所有含反引号的 Python 文件编辑必须用这种方法。**预防**：任何涉及 markdown 代码块（``` ```text ```）、regex 含反引号、或 sh/HTML 模板的 Python 代码，都写成独立文件执行，不传入 `-c` 参数。：用 Python `for line in lines:` 逐行处理正文时，如果只操作了 `body_lines` 部分但没有保留 `frontmatter_lines`，写回的文件将丢失 frontmatter 中的 `title`、`slug`、`halo.name` 等关键字段。Halo 收到 import-markdown 时可能：用 temp 文件名做 slug（如 `halo-import-feedgrab` 而非 `feedgrab-desktop`）、丢失分类/标签、或创建新文章而非更新已有文章（UUID 消失）。**根因**：lines 分片后忘记拼接 frontmatter 部分，或在 body 操作中意外修改了 frontmatter 区域。**修复**：从旧 UUID 信息恢复：`halo post delete <new-uuid> --force` 删除重复文章，`patch` 修复 frontmatter 中的 title/slug/halo.name。**预防**：
+
+   - 操作前用 `content[:fm_end+1]` 显式分离 frontmatter，操作后 `frontmatter + body` 拼接
+   - 确保 `fm_end` 是 frontmatter closing `---` 的行号
+   - 每次写回后用 `read_file` 读前 15 行验证 frontmatter 完整性
+   - 验证 `title`、`slug`、`halo.name` 三个关键字段非空且非 temp 文件名
+
+   示例代码：
+   ```python
+   lines = content.split('\n')
+   for i, line in enumerate(lines):
+       if i > 0 and line.strip() == '---' and i < 20:
+           fm_end = i; break
+   fm = lines[:fm_end + 1]
+   body = lines[fm_end + 1:]
+   # 操作 body ...
+   result = '\n'.join(fm) + '\n' + '\n'.join(body)
+   ```
+
+   快速验证：写回后 `grep -E '^(title|slug):' <file> | head -2` —— title 和 slug 不应包含 `temp`、`tmp` 或随机串。
 
