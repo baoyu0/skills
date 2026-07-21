@@ -21,6 +21,10 @@ npm-debug.log*
 .idea/
 *.sublime-*
 
+# Agent worktrees
+.claude/worktrees/
+.claude/sessions/
+
 # Logs
 *.log
 

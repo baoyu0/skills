@@ -14,13 +14,8 @@ auto-number.py — 自动编号 Markdown 文章的 H2/H3 标题
 import re
 import sys
 import os
+from heading_utils import number_headings, bold_to_h3
 
-CN_MAP = {
-    '一': '1', '二': '2', '三': '3', '四': '4', '五': '5',
-    '六': '6', '七': '7', '八': '8', '九': '9', '十': '10',
-    '壹': '1', '贰': '2', '叁': '3', '肆': '4', '伍': '5',
-    '陆': '6', '柒': '7', '捌': '8', '玖': '9', '拾': '10',
-}
 
 
 def load_file(path):
@@ -49,236 +44,6 @@ def add_h1_if_missing(body, title):
         body = f'# {title}\n\n' + body
         print("  ℹ️  Added H1 from frontmatter title")
     return body
-
-
-def normalize_h2_patterns(body):
-    lines = body.split('\n')
-    new_lines = []
-    changes = []
-    in_code_block = False
-
-    for i, line in enumerate(lines):
-        stripped = line.rstrip()
-
-        if stripped.startswith('```'):
-            in_code_block = not in_code_block
-            new_lines.append(line)
-            continue
-
-        if in_code_block:
-            new_lines.append(line)
-            continue
-
-        m = re.match(r'^(#{2,6})\s+(.+)$', stripped)
-        if not m:
-            new_lines.append(line)
-            continue
-
-        level = len(m.group(1))
-        content = m.group(2)
-
-        if level == 2:
-            if re.match(r'^\d+\.\s', content):
-                new_lines.append(line)
-                continue
-
-            m2 = re.match(r'^\d+\.\d+-\s+(.+)$', content)
-            if m2:
-                new_lines.append(f'## {m2.group(1)}')
-                changes.append(f"    {stripped} → ## {m2.group(1)}")
-                continue
-
-            m2 = re.match(r'^\d+\.\d+\s+(.+)$', content)
-            if m2:
-                new_lines.append(f'## {m2.group(1)}')
-                changes.append(f"    {stripped} → ## {m2.group(1)}")
-                continue
-
-            m2 = re.match(r'^([一二三四五六七八九十壹贰叁肆伍陆柒捌玖拾])[、.．]\s*(.*)$', content)
-            if m2:
-                new_lines.append(f'## {m2.group(2)}')
-                changes.append(f"    {stripped} → ## {m2.group(2)}")
-                continue
-
-            m2 = re.match(r'^【([^】]+)】\s*(.*)$', content)
-            if m2:
-                new_lines.append(f'## {m2.group(2)}')
-                changes.append(f"    {stripped} → ## {m2.group(2)}")
-                continue
-
-            new_lines.append(line)
-        else:
-            new_lines.append(line)
-
-    if changes:
-        print("  📐 Normalized H2 formats:")
-        for c in changes:
-            print(c)
-
-    return '\n'.join(new_lines)
-
-
-def number_h2(body):
-    lines = body.split('\n')
-    new_lines = []
-    counter = 0
-    changes = []
-    in_code_block = False
-
-    for line in lines:
-        stripped = line.rstrip()
-
-        # Track code blocks — skip heading detection inside them
-        if stripped.startswith('```'):
-            in_code_block = not in_code_block
-            new_lines.append(line)
-            continue
-
-        if in_code_block:
-            new_lines.append(line)
-            continue
-
-        m = re.match(r'^(#{2})\s+(.+)$', stripped)
-        if m:
-            content = m.group(2)
-            if re.match(r'^\d+\.\s', content):
-                new_lines.append(line)
-                continue
-            counter += 1
-            new_lines.append(f'## {counter}. {content}')
-            changes.append(f"    {stripped} → ## {counter}. {content}")
-        else:
-            new_lines.append(line)
-
-    if changes:
-        print(f"  🔢 Numbered {len(changes)} H2 headings (code block aware):")
-        for c in changes:
-            print(c)
-    else:
-        print("  ℹ️  No H2 headings to number")
-
-    return '\n'.join(new_lines)
-
-
-def find_parent_h2(lines, idx):
-    for i in range(idx, -1, -1):
-        m = re.match(r'^## (\d+)\.\s+.+$', lines[i].rstrip())
-        if m:
-            return int(m.group(1))
-    return None
-
-
-def process_h3_and_bold(body):
-    lines = body.split('\n')
-    new_lines = []
-    changes_h3 = []
-    h3_counter = {}
-    in_code_block = False
-
-    for i, line in enumerate(lines):
-        stripped = line.rstrip()
-
-        if stripped.startswith('```'):
-            in_code_block = not in_code_block
-            new_lines.append(line)
-            continue
-
-        if in_code_block:
-            new_lines.append(line)
-            continue
-
-        if re.match(r'^# ', stripped) or re.match(r'^##\s', stripped):
-            new_lines.append(line)
-            continue
-
-        m = re.match(r'^###\s+(.+)$', stripped)
-        if m:
-            content = m.group(1)
-            if re.match(r'^\d+\.\d+\s', content):
-                new_lines.append(line)
-                continue
-
-            parent = find_parent_h2(lines, i)
-            if parent:
-                h3_counter[parent] = h3_counter.get(parent, 0) + 1
-                new_lines.append(f'### {parent}.{h3_counter[parent]} {content}')
-                changes_h3.append(f"    {stripped} → ### {parent}.{h3_counter[parent]} {content}")
-            else:
-                new_lines.append(line)
-            continue
-
-        # Bold sub-heading: standalone **Title** on its own line
-        # Supports Chinese/English punctuation after closing **: 。！？：:;"""
-        m = re.match(r'^\*\*([^*]{1,30}?)[。！？]?\*\*[：:;]?\s*$', stripped)
-        if m:
-            title = m.group(1)
-            parent = find_parent_h2(lines, i)
-
-            # Check if the original bold text ends with 句号/感叹号 INSIDE **markers**
-            # (meaning it's a sentence-level bold conclusion, not a heading)
-            if stripped.rstrip().endswith('。**') or stripped.rstrip().endswith('！**'):
-                new_lines.append(line)
-                continue
-            # Mid-sentence punctuation = clearly not a heading
-            if re.search(r'[，、；]$', title):
-                new_lines.append(line)
-                continue
-            # Conclusion/intro patterns (usually full-sentence bold)
-            if re.search(r'(结论|注意|关键|提示|建议|本质|差异|根本|核心|一是|二是|既要|又要)', title):
-                new_lines.append(line)
-                continue
-            # CJK em-dash inside bold = explanatory sentence
-            if '——' in title:
-                new_lines.append(line)
-                continue
-
-            if parent and len(title) < 20:
-                h3_counter[parent] = h3_counter.get(parent, 0) + 1
-                new_lines.append(f'### {parent}.{h3_counter[parent]} {title}')
-                changes_h3.append(f"    {stripped} → ### {parent}.{h3_counter[parent]} {title}")
-                continue
-
-        # Bold subsection: **N\. Title** body text continues on same line
-        # Matches patterns like **1\. 标题** or **Step N · 标题** followed by text
-        m = re.match(r'^\*\*(\d+\\.\s+)([^*]{2,25}?)\*\*\s+(.*)$', stripped)
-        if m:
-            num_part = m.group(1)  # "1. " or "2. "
-            title = m.group(2).strip()  # "开通开发者账号"
-            trailing = m.group(3).strip()  # "浏览器打开..."
-
-            parent = find_parent_h2(lines, i)
-            if parent:
-                h3_counter[parent] = h3_counter.get(parent, 0) + 1
-                new_lines.append(f'### {parent}.{h3_counter[parent]} {title}')
-                changes_h3.append(f"    {stripped[:50]}… → ### {parent}.{h3_counter[parent]} {title}")
-                if trailing:
-                    new_lines.append('')
-                    new_lines.append(trailing)
-                continue
-
-        # Step pattern: **Step N · 标题** body text
-        m = re.match(r'^\*\*(Step\s+\d+\s*[·•]\s*[^*]{2,30}?)\*\*\s+(.*)$', stripped)
-        if m:
-            step_title = m.group(1).strip()
-            trailing = m.group(2).strip()
-            parent = find_parent_h2(lines, i)
-            if parent:
-                h3_counter[parent] = h3_counter.get(parent, 0) + 1
-                new_lines.append(f'### {parent}.{h3_counter[parent]} {step_title}')
-                changes_h3.append(f"    {stripped[:50]}… → ### {parent}.{h3_counter[parent]} {step_title}")
-                if trailing:
-                    new_lines.append('')
-                    new_lines.append(trailing)
-                continue
-
-        new_lines.append(line)
-
-    if changes_h3:
-        print(f"  🔢 Numbered/converted {len(changes_h3)} H3 sub-headings:")
-        for c in changes_h3:
-            print(c)
-
-    return '\n'.join(new_lines)
 
 
 def strip_x_footer(body):
@@ -594,17 +359,14 @@ def main():
     body = add_h1_if_missing(body, fm_dict.get('title'))
     body = strip_x_self_intro(body)
     fm = strip_clippings_tag(fm)
-    body = normalize_h2_patterns(body)
 
     # Check if narrative article (no H2s) — build structure from images
     if not re.search(r'^##\s', body, re.MULTILINE):
         body = add_narrative_headings(body)
 
-    body = number_h2(body)
-    body = process_h3_and_bold(body)
+    body = number_headings(body, fm_end=0)
+    body = bold_to_h3(body)
 
-    with open(path, 'w', encoding='utf-8') as f:
-        f.write(fm + body)
 
     h1_count = len(re.findall(r'^# ', body, re.MULTILINE))
     h2_count = len(re.findall(r'^## \d+\.\s+', body, re.MULTILINE))

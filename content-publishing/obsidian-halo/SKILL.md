@@ -126,7 +126,7 @@ python "C:/Users/zhaid/bin/x-clip-purify.py" title "<文件路径>" "新标题"
 > dst = r'C:\Users\zhaid\AppData\Local\Temp\halo-import-<slug>.md'
 > shutil.copy(src, dst)
 > ```
-> 之后全部 Phase 1-5 均操作 `dst` temp 文件。Phase 5 完成后 `shutil.copy(dst, src)` 写回原文。详见陷阱 52。
+> 之后全部 Phase 1-5 均操作 `dst` temp 文件。Phase 5 完成后 `shutil.copy(dst, src)` 写回原文。
 
 ```bash
 halo post import-markdown --file "<文件绝对路径>" --force 2>&1
@@ -482,7 +482,7 @@ print('publish:', d.get('publish'), '←', '✅' if d.get('publish') else '❌ S
 
 > ⚠️ **slug 由 Halo 自动管理**，import-markdown 创建时从 title 生成，export-markdown 拉回时自动包含，无需手动处理。如果 slug 确实太短（如 `17`），用 `halo post update <UUID> --slug <new-slug>` 修正。
 
-> ⚠️ **`halo.name` 导致 heading 损坏（重要！）**：如果 frontmatter 中含 `halo.name`，`--force` 走的是「更新」流程而非「创建」。此时 Halo 会重新处理 heading 编号，导致 `# 3 个Skill` 变成 `# 1- 个Skill`、`## 1. 标题` 变成 `## 1.1- 标题`。**第一次上传文章时务必删除整个 `halo:` 块**，import 成功后再 publish → export 拉回含新 `halo.name` 的 frontmatter。后续用 `halo.name` 做 update 则不会损坏 heading。详见陷阱 43。
+> ⚠️ **`halo.name` 导致 heading 损坏（重要！）**：如果 frontmatter 中含 `halo.name`，`--force` 走的是「更新」流程而非「创建」。此时 Halo 会重新处理 heading 编号，导致 `# 3 个Skill` 变成 `# 1- 个Skill`、`## 1. 标题` 变成 `## 1.1- 标题`。**第一次上传文章时务必删除整个 `halo:` 块**，import 成功后再 publish → export 拉回含新 `halo.name` 的 frontmatter。后续用 `halo.name` 做 update 则不会损坏 heading。
 
 #### ⚠️ 验证发布是否真实生效（必做，不可跳过）
 
@@ -746,13 +746,11 @@ curl -s "https://jia.baoyu2023.top/archives/<slug>?nocache=1" | grep -oP '<title
 27. **优先用文件级方案，不绕 CMS API**：遇到上传的视频/图片在部分浏览器出问题时，优先替换服务器文件本身，不要试图通过 Halo API 修改页面内容来换 URL。
 28. **export-markdown 会覆盖本地文件**：跑完 export 后本地文件被 Halo 端内容完全替换。如果 import/update 未正确执行（如被 `halo.name` 跳过），export 会把**旧内容**拉回来覆盖你的本地修改。**先确认 Halo 端的文章内容正确，再 export 同步回本地**。
 
-(陷阱 29-68 已在历史版本中废弃）
-
 29. **`--publish true` 返回 success 但文章仍是 DRAFT（致命！）**：`halo post update <UUID> --publish true` 输出 `Post updated successfully`，但 `halo post get <UUID> --json` 显示 `spec.publish: false`（DRAFT）。根因：后续的 `import-markdown --force` 重新导入了含 `publish: false` frontmatter 的文件，把已发布文章打回了草稿。**修复**：每次 import 后必须重新 publish + 验证（见 Phase 4 的验证步骤）。不要信任 `update` 的 exit code。pal:在拖。
 
 30. **`halo post import-markdown --force --file <path>` 参数顺序错误**：`--force` 必须在 `--file` 后面。`halo post import-markdown --force --file "file.md"` 报错 `Unused args`。正确：`halo post import-markdown --file "file.md" --force`。
 
-29. **代码块内的假 heading 被当作真实标题**：当教程文章的 markdown 代码块中展示了一道「CLAUDE.md 示例内容」，里面含有 `## knowledge` 或类似 heading 文本时，auto-number 的 H2 编号可能跳过该真实标题，或者后续 AI 的 renumber 操作把代码块内的示例文本当成真实 heading 一起修改——导致代码块内出现 `## 11. 知识库的核心结构` 这种**看起来像 heading 实际是代码**的混乱。**修复**：① 在 auto-number 后，用 `search_files pattern=\"^#{1,4} \"` 对比实际渲染的 H1/H2/H3 数量与预期数量；② 如果某章节 heading 出现在预期不该有的位置（比如 header 列表中第 10 章和第 12 章之间的 heading 来自代码块），用 `write_file` 一次性还原被污染的代码块内容；③ **永不信任 `search_files` 输出的绝对精确性**——页面渲染以 `browser_console` 的 `querySelectorAll('hN').length` 为准。④ 预防措施：在 `rename_h2()` 操作后，立即检查代码块范围内有无 `##` 行被误改。
+37. **代码块内的假 heading 被当作真实标题**：当教程文章的 markdown 代码块中展示了一道「CLAUDE.md 示例内容」，里面含有 `## knowledge` 或类似 heading 文本时，auto-number 的 H2 编号可能跳过该真实标题，或者后续 AI 的 renumber 操作把代码块内的示例文本当成真实 heading 一起修改——导致代码块内出现 `## 11. 知识库的核心结构` 这种**看起来像 heading 实际是代码**的混乱。**修复**：① 在 auto-number 后，用 `search_files pattern=\"^#{1,4} \"` 对比实际渲染的 H1/H2/H3 数量与预期数量；② 如果某章节 heading 出现在预期不该有的位置（比如 header 列表中第 10 章和第 12 章之间的 heading 来自代码块），用 `write_file` 一次性还原被污染的代码块内容；③ **永不信任 `search_files` 输出的绝对精确性**——页面渲染以 `browser_console` 的 `querySelectorAll('hN').length` 为准。④ 预防措施：在 `rename_h2()` 操作后，立即检查代码块范围内有无 `##` 行被误改。
 
 30. **`<details>` HTML 标签与 markdown 代码块混合导致文章后半部分被截断**：Halo 的 markdown 解析器对 HTML 包裹 markdown 代码块（如 `<details>` 内嵌 ` ```mermaid ```）的支持不稳定。当文章中出现此类结构时，Halo 可能在该标签处提前终止渲染——后端存了完整内容，但页面只显示到标签之前的部分。**修复**：保持纯 markdown 语法，绝不混用 HTML 标签包裹 ` ``` ` 代码块。如果要从 ` ```text ` 迁到 ` ```mermaid ``，直接改语言标识，不要加 HTML 外壳。纯 HTML 布局（如图片 `<div align=\"center\">`）不含嵌套代码块是安全的。
 

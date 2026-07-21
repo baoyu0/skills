@@ -132,54 +132,55 @@ class HaloAPI:
         print("  Updating metadata...")
         self._put(f"/apis/uc.api.content.halo.run/v1alpha1/posts/{name}", post)
 
-    def _resolve_category_names(self, display_names):
-        data = self._get("/apis/content.halo.run/v1alpha1/categories")
+    def _resolve_names(self, display_names, endpoint, kind, generate_name, extra_spec=None):
+        data = self._get(endpoint)
         existing = {i["spec"]["displayName"]: i["metadata"]["name"] for i in data.get("items", [])}
         result = []
         for name in display_names:
             if name in existing:
                 result.append(existing[name])
             else:
-                print(f"  Creating category: {name}")
-                c = self._post("/apis/content.halo.run/v1alpha1/categories", {
-                    "apiVersion": "content.halo.run/v1alpha1", "kind": "Category",
-                    "metadata": {"name": "", "generateName": "category-"},
-                    "spec": {"displayName": name, "slug": slugify(name),
-                             "description": "", "cover": "", "template": "",
-                             "priority": 0, "children": []}})
+                label = kind.lower()
+                print(f"  Creating {label}: {name}")
+                spec = {"displayName": name, "slug": slugify(name)}
+                if extra_spec:
+                    spec.update(extra_spec)
+                body = {
+                    "apiVersion": "content.halo.run/v1alpha1", "kind": kind,
+                    "metadata": {"name": "", "generateName": generate_name},
+                    "spec": spec}
+                c = self._post(endpoint, body)
                 result.append(c["metadata"]["name"])
         return result
 
+    def _resolve_category_names(self, display_names):
+        return self._resolve_names(
+            display_names,
+            "/apis/content.halo.run/v1alpha1/categories",
+            "Category", "category-",
+            {"description": "", "cover": "", "template": "", "priority": 0, "children": []})
+
     def _resolve_tag_names(self, display_names):
-        data = self._get("/apis/content.halo.run/v1alpha1/tags")
-        existing = {i["spec"]["displayName"]: i["metadata"]["name"] for i in data.get("items", [])}
-        result = []
-        for name in display_names:
-            if name in existing:
-                result.append(existing[name])
-            else:
-                print(f"  Creating tag: {name}")
-                t = self._post("/apis/content.halo.run/v1alpha1/tags", {
-                    "apiVersion": "content.halo.run/v1alpha1", "kind": "Tag",
-                    "metadata": {"name": "", "generateName": "tag-"},
-                    "spec": {"displayName": name, "slug": slugify(name),
-                             "color": "#ffffff", "cover": ""}})
-                result.append(t["metadata"]["name"])
-        return result
+        return self._resolve_names(
+            display_names,
+            "/apis/content.halo.run/v1alpha1/tags",
+            "Tag", "tag-",
+            {"color": "#ffffff", "cover": ""})
+
+    @staticmethod
+    def _resolve_display_names(base_url, pat, names, endpoint):
+        h = {"Authorization": f"Bearer {pat}"}
+        data = requests.get(f"{base_url}{endpoint}", headers=h, timeout=30).json()
+        m = {v["metadata"]["name"]: v["spec"]["displayName"] for v in data.get("items", [])}
+        return [m.get(n, n) for n in names]
 
     @staticmethod
     def get_category_display_names(base_url, pat, names):
-        h = {"Authorization": f"Bearer {pat}"}
-        data = requests.get(f"{base_url}/apis/content.halo.run/v1alpha1/categories", headers=h, timeout=30).json()
-        m = {v["metadata"]["name"]: v["spec"]["displayName"] for v in data.get("items", [])}
-        return [m.get(n, n) for n in names]
+        return HaloAPI._resolve_display_names(base_url, pat, names, "/apis/content.halo.run/v1alpha1/categories")
 
     @staticmethod
     def get_tag_display_names(base_url, pat, names):
-        h = {"Authorization": f"Bearer {pat}"}
-        data = requests.get(f"{base_url}/apis/content.halo.run/v1alpha1/tags", headers=h, timeout=30).json()
-        m = {v["metadata"]["name"]: v["spec"]["displayName"] for v in data.get("items", [])}
-        return [m.get(n, n) for n in names]
+        return HaloAPI._resolve_display_names(base_url, pat, names, "/apis/content.halo.run/v1alpha1/tags")
 
 
 def slugify(text):
@@ -632,8 +633,6 @@ def cmd_cleanup(filepath):
     # ── 5. obu CDN extraction removed — obu_extract.py is deprecated ──
     # X Article 视频无法通过 CLI/CDP 自动化下载。
     # 见 references/x-article-video-handling.md。
-                if result_file.exists():
-                    result_file.unlink(missing_ok=True)
 
     # Write back if anything changed
     if changes:
@@ -723,7 +722,7 @@ def cmd_auto(filepath):
             sys.exit(1)
 
     # ── Save processing report to vault ──
-    vault = Path("D:/1-obsidian/halo")
+    vault = Path(os.environ.get("HALO_VAULT_REPORT_DIR", "D:/1-obsidian/halo"))
     report = vault / f"_report-{fp.stem}.md"
     lines_r = [
         f"# Halo Publish Report: {title}",

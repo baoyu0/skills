@@ -14,25 +14,28 @@ Checks:
   - File size is reasonable (> 1 KB)
 """
 
-import sys, os, re
+from __future__ import annotations
 
-def main():
+import sys, os, re
+from typing import NoReturn
+
+def main() -> NoReturn:
     if len(sys.argv) < 2:
         print("Usage: python verify-halo-article.py <file_path>")
         sys.exit(1)
 
-    filepath = sys.argv[1]
+    filepath: str = sys.argv[1]
     if not os.path.exists(filepath):
         print(f"FAIL: File not found: {filepath}")
         sys.exit(1)
 
     with open(filepath, encoding="utf-8") as f:
-        text = f.read()
+        text: str = f.read()
 
-    errors = []
-    checks = []
+    errors: list[str] = []
+    checks: list[str] = []
 
-    def check(ok, msg):
+    def check(ok: bool, msg: str) -> None:
         if ok:
             checks.append(f"  PASS  {msg}")
         else:
@@ -40,14 +43,14 @@ def main():
             errors.append(msg)
 
     # 1. File size
-    size = os.path.getsize(filepath)
+    size: int = os.path.getsize(filepath)
     check(size > 1000, f"file size = {size:,} bytes")
 
     # 2. Frontmatter
     check(text.startswith("---"), "frontmatter starts with ---")
-    fm_end = text.find("---", 3)
+    fm_end: int = text.find("---", 3)
     check(fm_end > 3, "frontmatter has closing ---")
-    fm = text[4:fm_end].strip()
+    fm: str = text[4:fm_end].strip()
 
     # 3. Required frontmatter fields
     check("title:" in fm, "title field present")
@@ -57,29 +60,29 @@ def main():
 
     # 4. Categories and tags
     check("categories:" in fm, "categories present")
-    cats = re.findall(r"^\s+-\s+(.+)", text[text.find("categories:"):text.find("tags:")]) if "categories:" in fm else []
+    cats: list[str] = re.findall(r"^\s+-\s+(.+)", text[text.find("categories:"):text.find("tags:")]) if "categories:" in fm else []
     check(len(cats) >= 1, f"categories: {len(cats)} found")
 
     if "tags:" in fm:
-        tags_start = text.find("tags:")
+        tags_start: int = text.find("tags:")
         # tags end at next top-level field or ---
-        tags_section = text[tags_start:fm_end]
-        tags = re.findall(r"^\s+-\s+(.+)", tags_section, re.MULTILINE)
+        tags_section: str = text[tags_start:fm_end]
+        tags: list[str] = re.findall(r"^\s+-\s+(.+)", tags_section, re.MULTILINE)
         check(len(tags) >= 3, f"tags: {len(tags)} found (≥3)")
 
     # 5. Numbered H2 headings
-    body = text[fm_end + 3:]
-    h2s = re.findall(r"^## (.+)", body, re.MULTILINE)
-    numbered = [h for h in h2s if re.match(r"\d+\.", h)]
-    unnumbered = [h for h in h2s if not re.match(r"\d+\.", h) and "Anchor" not in h]
+    body: str = text[fm_end + 3:]
+    h2s: list[str] = re.findall(r"^## (.+)", body, re.MULTILINE)
+    numbered: list[str] = [h for h in h2s if re.match(r"\d+\.", h)]
+    unnumbered: list[str] = [h for h in h2s if not re.match(r"\d+\.", h) and "Anchor" not in h]
 
     check(len(numbered) >= 3, f"numbered H2 headings: {len(numbered)} (≥3)")
     check(len(unnumbered) == 0, f"no unnumbered H2 (found {len(unnumbered)}): {unnumbered}")
 
     # 6. No raw HTML tags leaked from clippings
-    raw_video = len(re.findall(r'<video\b', body, re.IGNORECASE))
-    raw_iframe = len(re.findall(r'<iframe\b', body, re.IGNORECASE))
-    blob_refs = len(re.findall(r'blob:', body, re.IGNORECASE))
+    raw_video: int = len(re.findall(r'<video\b', body, re.IGNORECASE))
+    raw_iframe: int = len(re.findall(r'<iframe\b', body, re.IGNORECASE))
+    blob_refs: int = len(re.findall(r'blob:', body, re.IGNORECASE))
     check(raw_video == 0, f"no raw <video> tags (found {raw_video})")
     check(raw_iframe == 0, f"no raw <iframe> tags (found {raw_iframe})")
     check(blob_refs == 0, f"no blob: references (found {blob_refs})")
@@ -87,14 +90,14 @@ def main():
     # 7. (removed: slug ASCII check — Halo auto-generates slug, no need to enforce ASCII)
 
     # 8. Verify numbered sequence is continuous
-    nums = []
+    nums: list[int] = []
     for h in numbered:
         m = re.match(r"(\d+)", h)
         if m:
             nums.append(int(m.group(1)))
     if nums:
-        expected = list(range(1, max(nums)))
-        missing = [n for n in expected if n not in nums]
+        expected: list[int] = list(range(1, max(nums)))
+        missing: list[int] = [n for n in expected if n not in nums]
         check(len(missing) == 0, f"no gaps in numbering sequence (missing: {missing})")
 
     # Print report
