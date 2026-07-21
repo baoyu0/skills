@@ -19,6 +19,7 @@ Requires: pip install pyyaml requests
 import sys, os, json, re, uuid, yaml, requests, time, shutil
 from pathlib import Path
 from markdown_it import MarkdownIt
+from heading_utils import demote_headings, number_headings, promote_xy_paragraphs
 
 md_renderer = MarkdownIt("gfm-like", {"breaks": True, "linkify": False})
 
@@ -422,101 +423,38 @@ def cmd_enhance(filepath):
     md = Path(filepath).read_text(encoding="utf-8")
     fm, body = parse_frontmatter(md)
     raw_body = body.strip()
-    lines = raw_body.split('\n')
 
-    # ── Phase 0: Demote H1 body headings (H1→H2, H2→H3, H3→H4) ──
-    # H1 body headings cause flat TOC since the article title is already H1 from frontmatter
-    h1_demoted = 0
-    new_lines = []
-    for line in lines:
-        # Demote ### → #### (must be before ## → ###)
-        if line.startswith('### '):
-            new_lines.append('#### ' + line[4:])
-        # Demote ## → ### (must be before # → ##)
-        elif line.startswith('## '):
-            new_lines.append('### ' + line[3:])
-        # Demote # → ## (body H1 only, not frontmatter H1)
-        elif line.startswith('# '):
-            new_lines.append('## ' + line[2:])
-            h1_demoted += 1
-        else:
-            new_lines.append(line)
-    if h1_demoted:
-        print(f"   ✅ Demoted {h1_demoted} H1 heading(s) to H2 (and adjusted sub-headings)")
-    lines = new_lines
+    # ---- Phase 0: Demote H1 body headings (H1-H2, H2-H3, H3-H4) ----
+    # H1 body headings cause flat TOC since article title is already H1 from frontmatter
+    body = demote_headings(raw_body)
 
-    # ── Phase A: Promote X.Y pattern paragraphs to H3 ──
-    h3_promoted = 0
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        # Match "X.Y Some Title" or "X.Y一些文字" where X and Y are digits
-        m = re.match(r'^(\d+)\.(\d+)\s+(.+)$', stripped)
-        if not m:
-            continue
-        # Only promote near-blank-line-delimited paragraphs that look like headings (short)
-        text = m.group(3).strip()
-        if len(text) > 100:
-            continue  # too long, likely a body paragraph
-        # Only promote if it starts clean (after blank line or at file start)
-        pre = lines[i-1].strip() if i > 0 else ""
-        if pre == "":
-            lines[i] = f"### {m.group(1)}.{m.group(2)} {text}"
-            h3_promoted += 1
+    # ---- Phase A: Promote X.Y pattern paragraphs to H3 ----
+    body = promote_xy_paragraphs(body)
 
-    # ── Phase B: Number headings (skip if already numbered) ──
-    h2_counter = 0
-    h3_counter = 0
-    h2_changed = 0
-    for i, line in enumerate(lines):
-        s = line.strip()
-        m = re.match(r'^##\s+(.+)$', s)
-        if m:
-            content = m.group(1).strip()
-            if re.match(r'^\d+(\.\d+)?[\.\s]', content):
-                m2 = re.match(r'^(\d+)', content)
-                if m2:
-                    h2_counter = int(m2.group(1))
-                    h3_counter = 0
-                continue
-            h2_counter += 1
-            h3_counter = 0
-            lines[i] = line.replace("## ", f"## {h2_counter}. ", 1)
-            h2_changed += 1
-            continue
-        m = re.match(r'^###\s+(.+)$', s)
-        if m:
-            content = m.group(1).strip()
-            if re.match(r'^\d+(\.\d+)?[\.\s]', content) or h2_counter == 0:
-                continue
-            h3_counter += 1
-            lines[i] = f"### {h2_counter}.{h3_counter} {content}"
-            h2_changed += 1
+    # ---- Phase B: Number headings (skip if already numbered) ----
+    body = number_headings(body)
 
-    # ── Write back ──
-    new_body = '\n'.join(lines)
-    Path(filepath).write_text(build_fm(fm) + new_body + "\n", encoding="utf-8")
+    # ---- Write back ----
+    Path(filepath).write_text(build_fm(fm) + body + chr(10), encoding="utf-8")
 
-    # ── Report ──
-    h2s = re.findall(r'^##\s+\d+\.\s+.+', new_body, re.MULTILINE)
-    h3s = re.findall(r'^###\s+\d+\.\d+\s+.+', new_body, re.MULTILINE)
-    h4s = re.findall(r'^####\s+.+', new_body, re.MULTILINE)
-    wc = len(new_body.split())
-    has_h3_natural = bool(re.findall(r'^###\s', new_body, re.MULTILINE))
-    print(f"📊 [{Path(filepath).name}]")
-    print(f"   Headings: {len(h2s)} H2 + {len(h3s)} H3 + {len(h4s)} H4 = {len(h2s)+len(h3s)+len(h4s)} total")
-    if h3_promoted:
-        print(f"   ✅ Promoted {h3_promoted} X.Y sub-section(s) to H3")
-    print(f"   Changes: {h2_changed} heading(s) numbered")
-    print(f"   Words: ~{wc}")
+    # ---- Report ----
+    h2s = re.findall(r'^##\s+\d+\.\s+.+', body, re.MULTILINE)
+    h3s = re.findall(r'^###\s+\d+\.\d+\s+.+', body, re.MULTILINE)
+    h4s = re.findall(r'^####\s+.+', body, re.MULTILINE)
+    wc = len(body.split())
+    has_h3_natural = bool(re.findall(r'^###\s', body, re.MULTILINE))
+    print(chr(128202) + ' [' + Path(filepath).name + ']')
+    print('   Headings: ' + str(len(h2s)) + ' H2 + ' + str(len(h3s)) + ' H3 + ' + str(len(h4s)) + ' H4 = ' + str(len(h2s)+len(h3s)+len(h4s)) + ' total')
+    print('   Words: ~' + str(wc))
     for h in h2s:
-        print(f"     {h.strip()}")
+        print('     ' + h.strip())
     # Detect flat structure
-    if len(h2s) >= 3 and not has_h3_natural and h3_promoted == 0:
-        print("   ⚠️  Flat H2-only structure — consider splitting long sections into H3 sub-sections")
-    if not fm.get("categories"):
-        print("   ⚠️  No categories — recommend adding some")
-    if not fm.get("tags"):
-        print("   ⚠️  No tags — recommend adding some")
+    if len(h2s) >= 3 and not has_h3_natural:
+        print('   ⚠ Flat H2-only structure - consider splitting long sections into H3 sub-sections')
+    if not fm.get('categories'):
+        print('   ⚠ No categories - recommend adding some')
+    if not fm.get('tags'):
+        print('   ⚠ No tags - recommend adding some')
 
 
 def cmd_detect(filepath):
