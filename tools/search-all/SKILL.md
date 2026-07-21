@@ -1,5 +1,6 @@
 ---
 name: search-all
+version: 1.0.0
 description: "全源检索 — 一次搜索 Obsidian + Halo 博客 + Hermes 配置。用户输入 `search-all <关键词>` 触发。"
 ---
 
@@ -50,6 +51,22 @@ CLI 搜不到的文件级源需要我手动查：
 1. 用户问 xxx 相关 → 先 `search-all xxx` 快速覆盖文件级源
 2. 再补 `session_search` + `fact_store` 覆盖 Agent 源
 3. 合成结果后给用户一个「从哪找到的」摘要
+
+## 配置
+
+脚本支持通过环境变量自定义路径：
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `SEARCH_ALL_OBSIDIAN` | `D:\1-obsidian` | Obsidian Vault 路径 |
+| `SEARCH_ALL_HALO_API` | `https://jia.baoyu2023.top/...` | Halo API 地址 |
+| `SEARCH_ALL_HERMES` | `%LOCALAPPDATA%\hermes` | Hermes 数据目录 |
+
+示例：
+```bash
+export SEARCH_ALL_OBSIDIAN="D:/MyVault"
+export SEARCH_ALL_HALO_API="https://blog.example.com/apis/api.content.halo.run/v1alpha1/posts"
+```
 
 ## 注意事项
 

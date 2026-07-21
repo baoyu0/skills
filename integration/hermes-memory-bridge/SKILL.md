@@ -1,5 +1,6 @@
 ---
 name: hermes-memory-bridge
+version: 1.0.0
 description: >
   Bridges Hermes Agent Desktop's rich memory system into other AI coding agents
   (pi, Claude Code, Codex, Cline, etc.). Hermes maintains THREE memory layers

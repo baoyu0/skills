@@ -1,5 +1,6 @@
 ---
 name: subtitle-edit
+version: 1.0.0
 description: Subtitle Edit CLI — batch subtitle format conversion, time offset, frame rate, encoding, and batch replace. Supports 300+ subtitle formats via /convert or the standalone seconv CLI.
 ---
 

@@ -1,5 +1,6 @@
 ---
 name: karing-routing
+version: 1.0.0
 description: "Karing 代理路由规则管理 — 为特定域名添加直连/代理路由，修复站点访问问题。"
 ---
 

@@ -1,5 +1,6 @@
 ---
 name: obsidian-halo
+version: 1.0.0
 description: "上传原文 → 拉回 frontmatter → cleanup → auto-number（编号+剥离自介+叙事分段）→ 排版 → 更新发布。说「处理 xxx.md」即可。"
 ---
 

@@ -1,5 +1,6 @@
 ---
 name: windows-triage
+version: 1.0.0
 description: "Windows 10 25H2 Insider 环境故障诊断框架 — 错误码映射 + 根因分析树 + 已知问题速查"
 ---
 

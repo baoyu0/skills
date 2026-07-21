@@ -1,5 +1,6 @@
 ---
 name: x-clip-purify
+version: 1.0.0
 description: "X/Twitter 剪藏文章标准化 — 剥离元数据、清理自介、检测结构化 prompt、优化 alt 文本。"
 ---
 
