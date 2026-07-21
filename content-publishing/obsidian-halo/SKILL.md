@@ -607,7 +607,6 @@ bun "C:/Users/zhaid/AppData/Local/hermes/skills/baoyu-format-markdown/scripts/ma
 | `scripts/auto-number.py <file>` | **自动编号 H2/H3 标题**，支持 0.N- / 一、/ 纯文本；补 H1；粗体→H3；剥离 X 自介内容；叙事文章按图片分段；`--check` 仅检视 |
 | `scripts/verify-article.py <file>` | 独立文章完整性验证 |
 | `scripts/halo-migrate-images.py <file>` | 扫描外部图片→下载→生成 Halo 上传命令 | 防盗链图片迁移；已推送到 GitHub 仓库 |
-| `scripts/obu_extract.py` | ⚠️ **已废弃**，X Article 视频无法通过任何 CLI 工具或 CDP 自动化下载 | 见 `references/x-article-video-handling.md` 和 `references/cat-catch-video-workflow.md` |
 
 参考文件：
 | 文件 | 作用 |

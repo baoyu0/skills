@@ -188,10 +188,6 @@ def slugify(text):
     s = re.sub(r'[^a-z0-9]+', '-', s)
     return s.strip('-')[:200] or "post"
 
-def _is_obu_available():
-    """Check if obu (Open Browser Use) is available on PATH."""
-    import shutil
-    return shutil.which("obu") is not None or Path("/d/npm-global/obu").exists()
 
 def parse_frontmatter(md):
     md = md.lstrip('\ufeff')
@@ -633,39 +629,9 @@ def cmd_cleanup(filepath):
     if leftover_blob:
         changes.append(f"  ⚠️  {len(leftover_blob)} blob: reference(s) still remain — review manually")
 
-    # ── 5. Optional: try obu to extract real CDN URLs for X Articles ──
-    if source_url and ("x.com" in source_url or "twitter.com" in source_url):
-        obu_script = Path.home() / ".hermes" / "scripts" / "obu_extract.py"
-        if obu_script.exists() and _is_obu_available():
-            print("   Trying obu CDN extraction...")
-            import tempfile, subprocess
-            result_file = Path(tempfile.gettempdir()) / f"obu_cleanup_{os.getpid()}.json"
-            try:
-                subprocess.run(
-                    ["python3", str(obu_script), source_url, str(result_file)],
-                    timeout=90, capture_output=True)
-                if result_file.exists():
-                    with open(result_file) as f:
-                        obu_result = json.load(f)
-                    cdn_urls = obu_result.get("cdn_urls", [])
-                    video_urls = [u for u in cdn_urls if "video.twimg.com" in u or ".mp4" in u]
-                    if video_urls:
-                        changes.append(f"  ✅ Found {len(video_urls)} CDN URL(s) via obu, replacing posters with <video>")
-                        posters = obu_result.get("posters", [])
-                        for i, poster in enumerate(posters):
-                            if i < len(video_urls):
-                                poster_escaped = re.escape(poster)
-                                # Replace poster links with <video> tags
-                                new_body = re.sub(
-                                    r'\[!\[[^\]]*\]\(' + poster_escaped + r'\)\]\([^)]+\)',
-                                    f'<video controls poster="{poster}"><source src="{video_urls[i]}" type="video/mp4"></video>',
-                                    new_body
-                                )
-                    else:
-                        changes.append("  ℹ️  obu: no video CDN URLs found (X uses MSE streaming)")
-                    result_file.unlink(missing_ok=True)
-            except Exception as e:
-                changes.append(f"  ⚠️  obu extraction failed: {e}")
+    # ── 5. obu CDN extraction removed — obu_extract.py is deprecated ──
+    # X Article 视频无法通过 CLI/CDP 自动化下载。
+    # 见 references/x-article-video-handling.md。
                 if result_file.exists():
                     result_file.unlink(missing_ok=True)
 

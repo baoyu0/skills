@@ -23,3 +23,6 @@ skill_view(name='development/windows-triage')
 | search-all | `cp scripts/search-all.py ~/bin/` | `search-all <keyword>` |
 | karing-route | `cp scripts/karing-route.py ~/bin/` | `karing-route list` |
 | x-clip-purify | `cp scripts/x-clip-purify.py ~/bin/` | `x-clip-purify clean <file>` |
+| hermes-sync | `cp scripts/hermes-sync.sh ~/bin/` | `hermes-sync.sh load` |
+
+> Tip: Use `make install` to deploy all CLI tools to `~/bin/` in one step.

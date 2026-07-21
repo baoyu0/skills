@@ -12,88 +12,128 @@ search-all — 全源检索脚本
 
 注意: ⚠️ Windows + git-bash 环境
   - 路径用反斜杠 \\ 和原始字符串 r'...'
-  - Python subprocess 用 cmd.exe，不认识正斜杠 D:/
-  - curl 和 grep 用 Windows 原生路径格式
+  - 某些 exe 路径需要绝对路径
 """
 
-import subprocess, sys, json, os, re
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+import time
 from datetime import datetime
 from pathlib import Path
+from typing import List, Optional
+from urllib.request import urlopen, quote
+from urllib.error import URLError
 
-# ── 配置（Windows 原生路径格式） ──
-OBSIDIAN_VAULT = r"D:\1-obsidian"
-HALO_API = "https://jia.baoyu2023.top/apis/api.content.halo.run/v1alpha1/posts"
-HERMES_HOME = r"C:\Users\zhaid\AppData\Local\hermes"
-CONFIG_PATHS = [
+
+# ── 配置（可通过环境变量覆盖） ──
+OBSIDIAN_VAULT: str = os.environ.get(
+    "SEARCH_ALL_OBSIDIAN",
+    r"D:\1-obsidian",
+)
+HALO_API: str = os.environ.get(
+    "SEARCH_ALL_HALO_API",
+    "https://jia.baoyu2023.top/apis/api.content.halo.run/v1alpha1/posts",
+)
+HERMES_HOME: str = os.environ.get(
+    "SEARCH_ALL_HERMES",
+    r"C:\Users\zhaid\AppData\Local\hermes",
+)
+CONFIG_PATHS: List[str] = [
     HERMES_HOME,
-    r"C:\Users\zhaid\.hermes",
-    r"C:\Users\zhaid\.bashrc",
-    r"C:\Users\zhaid\.config",
+    os.environ.get("HERMES_DIR", ""),
+    str(Path.home() / ".hermes"),
+    str(Path.home() / ".bashrc"),
+    str(Path.home() / ".config"),
 ]
 
-BOLD = "\033[1m"
-DIM = "\033[2m"
-GREEN = "\033[32m"
-YELLOW = "\033[33m"
-CYAN = "\033[36m"
-RESET = "\033[0m"
-SEP = "─" * 60
+BOLD: str = "\033[1m"
+DIM: str = "\033[2m"
+GREEN: str = "\033[32m"
+YELLOW: str = "\033[33m"
+CYAN: str = "\033[36m"
+RESET: str = "\033[0m"
+SEP: str = "─" * 60
 
 
-def print_section(title):
-    print(f"\n{BOLD}{YELLOW}▎{title}{RESET}")
-    print(SEP)
+# ══════════════════════════════════════════════
+# 原生 Python 文件搜索（替代 shell grep）
+# ══════════════════════════════════════════════
 
 
-def search_obsidian(keyword):
-    """grep Obsidian vault markdown 文件"""
-    if not os.path.isdir(OBSIDIAN_VAULT):
+def grep_file(filepath: Path, keyword: str, max_count: int = 3) -> List[str]:
+    """在单个文件中搜索关键词，返回匹配行列表（行号前缀）。"""
+    matches: List[str] = []
+    try:
+        text: str = filepath.read_text(encoding="utf-8", errors="replace")
+    except (OSError, PermissionError):
+        return matches
+    for i, line in enumerate(text.splitlines(), 1):
+        if keyword.lower() in line.lower():
+            matches.append(f"{filepath}:{i}:{line.strip()}")
+            if len(matches) >= max_count:
+                break
+    return matches
+
+
+def search_obsidian(keyword: str) -> None:
+    """用原生 Python 搜索 Obsidian vault markdown 文件。"""
+    vault: Path = Path(OBSIDIAN_VAULT)
+    if not vault.is_dir():
         print(f"  {DIM}Obsidian vault 不存在: {OBSIDIAN_VAULT}{RESET}")
         return
 
-    cmd = f'grep -rn --max-count=3 -i "{keyword}" "{OBSIDIAN_VAULT}" --include="*.md" 2>nul | head -80'
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60)
+    matched_files: set = set()
+    all_lines: List[str] = []
+    total_files: int = 0
 
-    lines = result.stdout.strip()
-    if not lines:
+    for md_file in vault.rglob("*.md"):
+        lines: List[str] = grep_file(md_file, keyword, max_count=3)
+        if lines:
+            matched_files.add(str(md_file))
+            all_lines.extend(lines)
+            total_files += 1
+
+    if not all_lines:
         print(f"  {DIM}无匹配{RESET}")
         return
 
-    # 统计匹配文件数
-    files = set()
-    for line in lines.split("\n"):
-        m = re.match(r'^(.+?):\d+:', line)
-        if m:
-            files.add(m.group(1))
-
-    print(f"  {BOLD}命中 {len(lines.split(chr(10)))} 行，分布在 {len(files)} 个文件{RESET}")
-    for f in sorted(files):
+    print(f"  {BOLD}命中 {len(all_lines)} 行，分布在 {len(matched_files)} 个文件{RESET}")
+    for f in sorted(matched_files):
         try:
-            rel = os.path.relpath(f, OBSIDIAN_VAULT)
+            rel: str = os.path.relpath(f, OBSIDIAN_VAULT)
         except ValueError:
             rel = f
         print(f"  {GREEN}📄 {rel}{RESET}")
     print()
 
 
-def url_encode(s):
-    """简单的 URL 编码（只编码特殊字符，不编码中文）"""
-    import urllib.parse
-    return urllib.parse.quote(s, safe='')
+def url_encode(s: str) -> str:
+    """URL 全量编码（含中文）。使用 urllib.parse.quote 对非 ASCII 字符编码。"""
+    return quote(s, safe="")
 
 
-def search_halo(keyword):
-    """通过 Halo 公开 API 搜索已发布的文章"""
-    encoded = url_encode(keyword)
-    cmd = f'curl -s "{HALO_API}?keyword={encoded}&size=10" 2>nul'
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+def search_halo(keyword: str) -> None:
+    """通过 Halo 公开 API 搜索已发布的文章。"""
+    encoded: str = url_encode(keyword)
+    url: str = f"{HALO_API}?keyword={encoded}&size=10"
 
     try:
-        data = json.loads(result.stdout)
-        items = data.get("items", [])
-        total = data.get("total", 0)
-    except (json.JSONDecodeError, KeyError, ValueError):
-        print(f"  {DIM}Halo API 请求失败（或网络超时）{RESET}")
+        with urlopen(url, timeout=30) as resp:
+            body: str = resp.read().decode("utf-8")
+    except (URLError, OSError, TimeoutError) as e:
+        print(f"  {DIM}Halo API 请求失败: {e}{RESET}")
+        return
+
+    try:
+        data: dict = json.loads(body)
+        items: list = data.get("items", [])
+        total: int = data.get("total", 0)
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        print(f"  {DIM}Halo API 响应解析失败: {e}{RESET}")
         return
 
     if total == 0 or not items:
@@ -102,40 +142,71 @@ def search_halo(keyword):
 
     print(f"  {BOLD}共 {total} 篇匹配，显示前 {min(10, len(items))} 篇{RESET}")
     for post in items:
-        spec = post.get("spec", {})
-        status = post.get("status", {})
-        title = spec.get("title", "?")
-        permalink = status.get("permalink", "")
-        tags = ", ".join(t.get("spec", {}).get("displayName", "") for t in post.get("tags", []))
-        excerpt = status.get("excerpt", "")[:150]
+        spec: dict = post.get("spec", {})
+        status: dict = post.get("status", {})
+        title: str = spec.get("title", "?")
+        permalink: str = status.get("permalink", "")
+        tags_str: str = ", ".join(
+            t.get("spec", {}).get("displayName", "")
+            for t in post.get("tags", [])
+        )
+        excerpt: str = status.get("excerpt", "")[:150]
 
         print(f"\n  {GREEN}📝 {title}{RESET}")
         if permalink:
             print(f"    {DIM}{permalink}{RESET}")
-        if tags:
-            print(f"    {DIM}标签: {tags}{RESET}")
+        if tags_str:
+            print(f"    {DIM}标签: {tags_str}{RESET}")
         if excerpt:
             print(f"    {DIM}{excerpt}{RESET}")
     print()
 
 
-def search_config(keyword):
-    """搜索 Hermes 配置文件和脚本"""
-    found_files = []
+def search_single_file(filepath: Path, keyword: str, max_lines: int = 5) -> Optional[str]:
+    """在单个文件中搜索（简单版），返回匹配内容或 None。"""
+    try:
+        text: str = filepath.read_text(encoding="utf-8", errors="replace")
+    except (OSError, PermissionError, UnicodeDecodeError):
+        return None
+    matches: List[str] = []
+    for i, line in enumerate(text.splitlines(), 1):
+        if keyword.lower() in line.lower():
+            matches.append(f"{i}:{line.strip()}")
+            if len(matches) >= max_lines:
+                break
+    return "\n".join(matches) if matches else None
 
-    for base in CONFIG_PATHS:
-        if not os.path.exists(base):
+
+def search_config(keyword: str) -> None:
+    """搜索 Hermes 配置文件和脚本（原生 Python 实现）。"""
+    found_files: List[tuple] = []
+    MAX_LINES: int = 30
+
+    for base_str in CONFIG_PATHS:
+        if not base_str:
             continue
-        if os.path.isfile(base):
-            cmd = f'grep -n -i "{keyword}" "{base}" 2>nul | head -5'
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
-            if result.stdout.strip():
-                found_files.append((base, result.stdout.strip()))
+        base: Path = Path(base_str)
+        if not base.exists():
+            continue
+
+        if base.is_file():
+            match: Optional[str] = search_single_file(base, keyword, max_lines=5)
+            if match:
+                found_files.append((str(base), match))
         else:
-            cmd = f'grep -rn --max-count=2 -i "{keyword}" "{base}" --include="*.md" --include="*.json" --include="*.yaml" --include="*.py" --include="*.sh" 2>nul | head -30'
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60)
-            if result.stdout.strip():
-                found_files.append((base, result.stdout.strip()))
+            # 搜索配置目录下的常见文件格式
+            lines: List[str] = []
+            for ext in ("*.md", "*.json", "*.yaml", "*.yml", "*.py", "*.sh", "*.toml", "*.conf", "*.ini"):
+                for f in base.rglob(ext):
+                    result: Optional[str] = search_single_file(f, keyword, max_lines=2)
+                    if result:
+                        lines.append(f"{f}:{result}")
+                        if len(lines) >= MAX_LINES:
+                            break
+                if len(lines) >= MAX_LINES:
+                    break
+            if lines:
+                found_files.append((str(base), "\n".join(lines)))
 
     if not found_files:
         print(f"  {DIM}无匹配{RESET}")
@@ -148,21 +219,37 @@ def search_config(keyword):
     print()
 
 
-def main():
-    args = sys.argv[1:]
+def print_section(title: str) -> None:
+    """打印分节标题。"""
+    print(f"\n{BOLD}{YELLOW}▎{title}{RESET}")
+    print(SEP)
+
+
+def main() -> None:
+    """入口函数。"""
+    args: List[str] = sys.argv[1:]
 
     if not args or args[0] in ("help", "--help", "-h"):
         print(__doc__)
         return
 
     if len(args) == 1:
-        keyword = args[0]
-        sources = ["obsidian", "halo", "config"]
+        keyword: str = args[0].strip()
+        if not keyword:
+            print("搜索关键词不能为空")
+            return
+        if len(keyword) > 200:
+            print("搜索关键词过长（最多 200 字符）")
+            return
+        sources: List[str] = ["obsidian", "halo", "config"]
     else:
-        source = args[0].lower()
-        keyword = " ".join(args[1:])
+        source: str = args[0].lower()
+        keyword = " ".join(args[1:]).strip()
         if source == "help":
             print(__doc__)
+            return
+        if not keyword:
+            print("搜索关键词不能为空")
             return
         if source not in ("obsidian", "halo", "config"):
             print(f"未知源: {source}，可选: obsidian / halo / config")
@@ -174,11 +261,11 @@ def main():
     print(f"{DIM}{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}{RESET}")
 
     if "obsidian" in sources:
-        print_section("Obsidian Vault (D:\\1-obsidian)")
+        print_section("Obsidian Vault")
         search_obsidian(keyword)
 
     if "halo" in sources:
-        print_section("Halo 博客 (jia.baoyu2023.top)")
+        print_section("Halo 博客")
         search_halo(keyword)
 
     if "config" in sources:

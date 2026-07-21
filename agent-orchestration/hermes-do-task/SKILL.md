@@ -1,5 +1,5 @@
 ---
-name: do-task
+name: hermes-do-task
 description: "一键任务执行：plan → subagent execute → verify → handoff。串联 writing-plans + subagent-driven-development + handoff 为单次 workflow。"
 ---
 

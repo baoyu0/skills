@@ -2,7 +2,7 @@
 
 个人 AI Agent 技能合集。每个 skill 封装一个可复用的工作流，供 **Hermes Agent**、**Claude Code**、**Codex**、**OpenCode**、**pi** 等 AI 编程 agent 加载使用。
 
-📦 **9 skills** · 7 个分类 · 配套 CLI 工具 · MIT 许可
+📦 **9 skills** · 8 个分类 · 配套 CLI 工具 · MIT 许可
 
 ---
 

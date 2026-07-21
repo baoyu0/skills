@@ -1,2 +1,3 @@
 #!/bin/sh
-python3 "C:/Users/zhaid/bin/karing-route.py" "$@"
+DIR="$(cd "$(dirname "$0")" && pwd)"
+python3 "$DIR/karing-route.py" "$@"
