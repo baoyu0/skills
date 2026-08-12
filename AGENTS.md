@@ -14,6 +14,7 @@ skill_view(name='network/karing-routing')
 skill_view(name='integration/hermes-memory-bridge')
 skill_view(name='tools/search-all')
 skill_view(name='development/windows-triage')
+skill_view(name='development/x-twitter-bulk-unfollow')
 ```
 
 ## CLI tools (available at ~/bin/)
