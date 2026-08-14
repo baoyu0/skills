@@ -83,6 +83,12 @@ obu navigate --tab-id <TAB> --session-id "<SID>" --url "https://x.com/<handle>"
 # 5. 验证: [data-testid$="-unfollow"] 消失 = 成功（uf:false）
 ```
 
+**X UI 双版本（2026-08 实测）**：
+- 旧版：点「正在关注」→ 弹 confirmationSheetConfirm 确认框 → 点确认
+- 新版：hover 按钮变红显示「取消关注」→ **直接点击即取关（无确认框）**
+- 脚本需兼容两者：点击后同时查 confirmationSheetConfirm **和** 直接 uf:false
+- 判定按钮 hover 态：`(btn.getAttribute('aria-label')||'').includes('正在关注')` 但 innerText='取消关注'
+
 - 按钮定位：profile 页 `[data-testid$="-unfollow"]`，data-testid 自带 user_id（`<id>-unfollow`）
 - 会话用完必须 `obu finalize-tabs --session-id <SID> --keep '[]'`
 - 批量用 `terminal(background=true, notify_on_complete=true)` 后台跑
@@ -104,17 +110,31 @@ obu navigate --tab-id <TAB> --session-id "<SID>" --url "https://x.com/<handle>"
 
 **真正低质量信号**：零发帖、发帖<20 且粉丝<700 且新注册、老号（≤2020）无成长、互关引流号、广告号（发帖<5 简介纯 promo）、荐股带单、赌博/挖矿、色情擦边、废弃号（"已搬家到 @xxx"）、邪教传教
 
+**第四层：转载/搬运号**（2026-08 实战新增）— 名字/简介含「搬运/转载/分享/每日/资讯/快讯/美食美图」等，内容非原创。中文常见：饭否搬运、王兴搬运、故事分享、心灵鸡汤、图片视频转载。高粉丝搬运号也是低质量（内容无原创价值）。
+
+**第五层：交易/币圈引流**（实战新增）— 简介含「meme call/带单/喊单/100X/空投/TG群/交易笔记/财富密码」等。注意区分：有免责声明的个人交易记录（保留）vs 拉群带单的引流号（取关）。
+
+**已弃用维度**（误伤率 100%，勿用）：
+- 长随机 handle（`^[a-zA-Z0-9]{12,}$`）— 大量真人用默认数字 ID（设计阿sir/大学教授/开发者全是随机串）
+- 星座/运势/玄学关键词 — 命中 14 个里 13 个是真人（八字研究员、塔罗原创作者、软件工程师）
+- 高粉丝 + 极低发帖 = 僵尸号 — 命中多为官方号/项目方（Z-Library、AI 项目），用户可能有意关注
+
 ## 四、手动清单模式（CDP 被标记时的兜底）
 
 **触发条件**：CDP 注入无效（见坑表）时，生成链接清单让用户手动取关。
 
 **流程**：
-1. 从 current_users.json 筛选候选（脚本见 references/手动清单生成）
-2. 生成 Markdown 清单：链接 + 名字 + 粉丝 + 发帖 + 简介（分批次，每批 ≤50）
+1. 从 current_users.json 筛选候选（脚本 scripts/gen_manual_list.py）
+2. 生成 Markdown 清单：链接 + 名字 + 粉丝 + 发帖 + 简介（分批次，每批 ≤50，**直接在聊天里列出链接，用户懒得看文件**）
 3. 用户手动操作：打开链接 → hover「正在关注」→ 变红「取消关注」→ 点击
 4. 手动后**必须重新抓取全量验证**（不能信"我清完了"的说法，实际可能漏）
 
-实测：53 个手动清单，用户清完后验证 48/53 移除，5 个遗漏补清。手动 50 个约 10 分钟。
+**实战数据（2026-08 三批共 112 个手动）**：
+- 第一批 53 个：用户清完验证 **48/53** 移除，5 个遗漏补清
+- 第二批 9 个：验证 9/9 全部移除
+- 第三批 50 个：验证 50/50 全部移除
+- 用户偏好：粉丝 <1000 的活跃真人**也愿意清**（腾空间优先于保真），但开发者/从业者要标注提醒
+- 验证脚本 scripts/verify.sh 每个账号 ~6 秒，50 个 ~6 分钟后台跑
 
 ## 五、只读验证（区分假 FAIL / 真剩余）
 
@@ -136,6 +156,7 @@ obu navigate --tab-id <TAB> --session-id "<SID>" --url "https://x.com/<handle>"
 | JS 导航 | CDP target 断开 | 用 obu navigate |
 | 无 mouseMoved | 点击无效/菜单不弹 | mouseMoved → pressed → released |
 | 确认菜单延迟 | NO_BTN | 轮询 5s × 重试 |
+| **X UI 改版** | 新版 hover 按钮变红「取消关注」直接点击取关，无 confirmationSheetConfirm | 兼容两版：点击后同时查确认框 **和** 直接 uf:false |
 | emoji surrogate | json.dump 报错 | errors='replace' |
 | p.json 并发覆盖 | 表达式被换 | 各脚本独立临时文件名 |
 | verify session 错 | 全 EVAL_FAIL | SESSION 匹配 TAB 所属 session |
